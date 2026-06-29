@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.config import settings
-from backend.db.session import async_engine as engine, Base
+from backend.db.session import async_engine as engine
 from backend.core.exceptions import AppException
 
 logger = logging.getLogger("research_agent")
@@ -24,10 +24,7 @@ logger = logging.getLogger("research_agent")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
-    # 启动：初始化数据库表
-    if settings.app_env == "development":
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    # 启动：数据库表由 Alembic migration 管理（scripts/setup.ps1 中执行）
 
     # 启动：注册 AI 模型
     from backend.models import init_models
