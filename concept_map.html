@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>科研Agent — 概念图</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #0b0e17;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+  .container {
+    max-width: 1200px;
+    width: 100%;
+  }
+  h1 {
+    color: #e8ecf4;
+    text-align: center;
+    font-weight: 600;
+    font-size: 28px;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    color: #8892b0;
+    text-align: center;
+    font-size: 15px;
+    margin-bottom: 40px;
+    letter-spacing: 0.5px;
+  }
+  svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 24px;
+    margin-top: 36px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #c8d0e0;
+    font-size: 13px;
+  }
+  .legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .footer {
+    color: #4a4f62;
+    text-align: center;
+    font-size: 12px;
+    margin-top: 28px;
+    letter-spacing: 0.4px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🧬 科研 Agent</h1>
+  <p class="subtitle">自我成长型 AI 数据分析助手 · 概念架构图</p>
+
+  <svg viewBox="0 0 1100 720" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <defs>
+      <filter id="glow">
+        <feGaussianBlur stdDeviation="3" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="glowStrong">
+        <feGaussianBlur stdDeviation="5" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <radialGradient id="coreGrad" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#6c63ff"/>
+        <stop offset="100%" stop-color="#3b33b0"/>
+      </radialGradient>
+      <radialGradient id="ringGrad" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#1a1e30" stop-opacity="0"/>
+        <stop offset="70%" stop-color="#1a1e30" stop-opacity="0.4"/>
+        <stop offset="100%" stop-color="#3b33b0" stop-opacity="0.15"/>
+      </radialGradient>
+    </defs>
+
+    <!-- 背景轨道圆环 -->
+    <circle cx="550" cy="370" r="260" fill="none" stroke="#2d2e4a" stroke-width="0.5" stroke-dasharray="4,6" opacity="0.5"/>
+    <circle cx="550" cy="370" r="200" fill="none" stroke="#2d2e4a" stroke-width="0.5" stroke-dasharray="3,8" opacity="0.4"/>
+    <circle cx="550" cy="370" r="140" fill="none" stroke="#2d2e4a" stroke-width="0.5" stroke-dasharray="2,10" opacity="0.3"/>
+
+    <!-- 核心节点 -->
+    <circle cx="550" cy="370" r="62" fill="url(#coreGrad)" filter="url(#glowStrong)"/>
+    <circle cx="550" cy="370" r="62" fill="none" stroke="#8b83ff" stroke-width="1.5" opacity="0.5"/>
+    <text x="550" y="358" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">科研 Agent</text>
+    <text x="550" y="380" text-anchor="middle" fill="#c4c0ff" font-size="10.5">自我成长型 AI</text>
+    <text x="550" y="394" text-anchor="middle" fill="#c4c0ff" font-size="10.5">数据分析助手</text>
+
+    <!-- ===== 层次1：四大核心支柱 ===== -->
+
+    <!-- 支柱1：专业数据分析 — 左上 -->
+    <rect x="345" y="158" width="134" height="44" rx="22" fill="#132322" stroke="#4ade80" stroke-width="1.2"/>
+    <text x="412" y="186" text-anchor="middle" fill="#4ade80" font-size="13" font-weight="600">📊 专业数据分析</text>
+
+    <!-- 支柱2：知识检索 — 右上 -->
+    <rect x="660" y="158" width="134" height="44" rx="22" fill="#13222d" stroke="#38bdf8" stroke-width="1.2"/>
+    <text x="727" y="186" text-anchor="middle" fill="#38bdf8" font-size="13" font-weight="600">🔍 知识检索</text>
+
+    <!-- 支柱3：自动报告 — 左下 -->
+    <rect x="345" y="552" width="134" height="44" rx="22" fill="#2d1322" stroke="#f472b6" stroke-width="1.2"/>
+    <text x="412" y="580" text-anchor="middle" fill="#f472b6" font-size="13" font-weight="600">📄 自动报告</text>
+
+    <!-- 支柱4：自我成长 — 右下 -->
+    <rect x="620" y="552" width="134" height="44" rx="22" fill="#2d2413" stroke="#fbbf24" stroke-width="1.2"/>
+    <text x="687" y="580" text-anchor="middle" fill="#fbbf24" font-size="13" font-weight="600">🧠 自我成长</text>
+
+    <!-- 连接线：核心 → 支柱（虚线） -->
+    <path d="M500 322 Q470 278 420 248 Q400 233 385 210" stroke="#4ade80" stroke-width="1" fill="none" opacity="0.35" stroke-dasharray="4,4"/>
+    <path d="M600 322 Q640 278 680 248 Q700 233 715 210" stroke="#38bdf8" stroke-width="1" fill="none" opacity="0.35" stroke-dasharray="4,4"/>
+    <path d="M495 420 Q460 470 435 510 Q425 530 418 548" stroke="#f472b6" stroke-width="1" fill="none" opacity="0.35" stroke-dasharray="4,4"/>
+    <path d="M605 420 Q640 470 670 510 Q680 530 686 548" stroke="#fbbf24" stroke-width="1" fill="none" opacity="0.35" stroke-dasharray="4,4"/>
+
+    <!-- ===== 层次2：子能力节点 ===== -->
+
+    <!-- 数据分析子项 -->
+    <rect x="210" y="98" width="100" height="32" rx="16" fill="#0d1817" stroke="#4ade80" stroke-width="0.7" opacity="0.85"/>
+    <text x="260" y="118" text-anchor="middle" fill="#6ee7a0" font-size="10">GNSS 位移</text>
+
+    <rect x="210" y="138" width="100" height="32" rx="16" fill="#0d1817" stroke="#4ade80" stroke-width="0.7" opacity="0.85"/>
+    <text x="260" y="158" text-anchor="middle" fill="#6ee7a0" font-size="10">InSAR 形变</text>
+
+    <rect x="210" y="178" width="100" height="32" rx="16" fill="#0d1817" stroke="#4ade80" stroke-width="0.7" opacity="0.85"/>
+    <text x="260" y="198" text-anchor="middle" fill="#6ee7a0" font-size="10">水文监测</text>
+
+    <rect x="210" y="218" width="100" height="32" rx="16" fill="#0d1817" stroke="#4ade80" stroke-width="0.7" opacity="0.85"/>
+    <text x="260" y="238" text-anchor="middle" fill="#6ee7a0" font-size="10">孔隙水压力</text>
+
+    <!-- 连接 -->
+    <line x1="310" y1="114" x2="350" y2="175" stroke="#4ade80" stroke-width="0.5" opacity="0.25" stroke-dasharray="2,3"/>
+    <line x1="310" y1="154" x2="350" y2="180" stroke="#4ade80" stroke-width="0.5" opacity="0.25" stroke-dasharray="2,3"/>
+    <line x1="310" y1="194" x2="350" y2="185" stroke="#4ade80" stroke-width="0.5" opacity="0.25" stroke-dasharray="2,3"/>
+    <line x1="310" y1="234" x2="350" y2="190" stroke="#4ade80" stroke-width="0.5" opacity="0.25" stroke-dasharray="2,3"/>
+
+    <!-- 知识检索子项 -->
+    <rect x="790" y="98" width="100" height="32" rx="16" fill="#0d1822" stroke="#38bdf8" stroke-width="0.7" opacity="0.85"/>
+    <text x="840" y="118" text-anchor="middle" fill="#7dd3fc" font-size="10">规范条文</text>
+
+    <rect x="790" y="138" width="100" height="32" rx="16" fill="#0d1822" stroke="#38bdf8" stroke-width="0.7" opacity="0.85"/>
+    <text x="840" y="158" text-anchor="middle" fill="#7dd3fc" font-size="10">历史文献</text>
+
+    <rect x="790" y="178" width="100" height="32" rx="16" fill="#0d1822" stroke="#38bdf8" stroke-width="0.7" opacity="0.85"/>
+    <text x="840" y="198" text-anchor="middle" fill="#7dd3fc" font-size="10">监测案例</text>
+
+    <rect x="790" y="218" width="100" height="32" rx="16" fill="#0d1822" stroke="#38bdf8" stroke-width="0.7" opacity="0.85"/>
+    <text x="840" y="238" text-anchor="middle" fill="#7dd3fc" font-size="10">RAG 语义检索</text>
+
+    <line x1="790" y1="114" x2="750" y2="175" stroke="#38bdf8" stroke-width="0.5" opacity="0.25" stroke-dasharray="2,3"/>
+    <line x1="790" y1="154" x2="748" y2="180" stroke="#38bdf8" stroke-width="0.5" opacity="0.25" stroke-dasharray="2,3"/>
+    <line x1="790" y1="194" x2="746" y2="185" stroke="#38bdf8" stroke-width="0.5" opacity="0.25" stroke-dasharray="2,3"/>
+    <line x1="790" y1="234" x2="744" y2="190" stroke="#38bdf8" stroke-width="0.5" opacity="0.25" stroke-dasharray="2,3"/>
+
+    <!-- 自我成长子项 -->
+    <rect x="756" y="540" width="112" height="32" rx="16" fill="#221d0d" stroke="#fbbf24" stroke-width="0.7" opacity="0.85"/>
+    <text x="812" y="560" text-anchor="middle" fill="#fde68a" font-size="10">记忆网络</text>
+
+    <rect x="756" y="580" width="112" height="32" rx="16" fill="#221d0d" stroke="#fbbf24" stroke-width="0.7" opacity="0.85"/>
+    <text x="812" y="600" text-anchor="middle" fill="#fde68a" font-size="10">Prompt 优化</text>
+
+    <rect x="756" y="620" width="112" height="32" rx="16" fill="#221d0d" stroke="#fbbf24" stroke-width="0.7" opacity="0.85"/>
+    <text x="812" y="640" text-anchor="middle" fill="#fde68a" font-size="10">LoRA 微调</text>
+
+    <rect x="756" y="660" width="112" height="32" rx="16" fill="#221d0d" stroke="#fbbf24" stroke-width="0.7" opacity="0.85"/>
+    <text x="812" y="680" text-anchor="middle" fill="#fde68a" font-size="10">ReAct 自主反思</text>
+
+    <line x1="756" y1="556" x2="718" y2="574" stroke="#fbbf24" stroke-width="0.5" opacity="0.25" stroke-dasharray="2,3"/>
+    <line x1="756" y1="596" x2="716" y2="582" stroke="#fbbf24" stroke-width="0.5" opacity="0.25" stroke-dasharray="2,3"/>
+    <line x1="756" y1="636" x2="714" y2="590" stroke="#fbbf24" stroke-width="0.5" opacity="0.25" stroke-dasharray="2,3"/>
+    <line x1="756" y1="676" x2="712" y2="598" stroke="#fbbf24" stroke-width="0.5" opacity="0.25" stroke-dasharray="2,3"/>
+
+    <!-- 自动报告子项 -->
+    <rect x="200" y="540" width="112" height="32" rx="16" fill="#221012" stroke="#f472b6" stroke-width="0.7" opacity="0.85"/>
+    <text x="256" y="560" text-anchor="middle" fill="#f9a8d4" font-size="10">监测报告生成</text>
+
+    <rect x="200" y="580" width="112" height="32" rx="16" fill="#221012" stroke="#f472b6" stroke-width="0.7" opacity="0.85"/>
+    <text x="256" y="600" text-anchor="middle" fill="#f9a8d4" font-size="10">专业分析图表</text>
+
+    <rect x="200" y="620" width="112" height="32" rx="16" fill="#221012" stroke="#f472b6" stroke-width="0.7" opacity="0.85"/>
+    <text x="256" y="640" text-anchor="middle" fill="#f9a8d4" font-size="10">一键生成</text>
+
+    <line x1="312" y1="556" x2="350" y2="574" stroke="#f472b6" stroke-width="0.5" opacity="0.25" stroke-dasharray="2,3"/>
+    <line x1="312" y1="596" x2="350" y2="582" stroke="#f472b6" stroke-width="0.5" opacity="0.25" stroke-dasharray="2,3"/>
+    <line x1="312" y1="636" x2="350" y2="590" stroke="#f472b6" stroke-width="0.5" opacity="0.25" stroke-dasharray="2,3"/>
+
+    <!-- ===== 层次3：基础技术栈（环绕在核心周围） ===== -->
+
+    <rect x="160" y="360" width="76" height="34" rx="17" fill="#161b2a" stroke="#565c7a" stroke-width="0.7"/>
+    <text x="198" y="381" text-anchor="middle" fill="#8d94b0" font-size="9.5">FastAPI</text>
+
+    <rect x="290" y="300" width="76" height="34" rx="17" fill="#161b2a" stroke="#565c7a" stroke-width="0.7"/>
+    <text x="328" y="321" text-anchor="middle" fill="#8d94b0" font-size="9.5">LangChain</text>
+
+    <rect x="290" y="410" width="86" height="34" rx="17" fill="#161b2a" stroke="#565c7a" stroke-width="0.7"/>
+    <text x="333" y="431" text-anchor="middle" fill="#8d94b0" font-size="9.5">ChromaDB</text>
+
+    <rect x="720" y="300" width="86" height="34" rx="17" fill="#161b2a" stroke="#565c7a" stroke-width="0.7"/>
+    <text x="763" y="321" text-anchor="middle" fill="#8d94b0" font-size="9.5">多模型路由</text>
+
+    <rect x="720" y="410" width="96" height="34" rx="17" fill="#161b2a" stroke="#565c7a" stroke-width="0.7"/>
+    <text x="768" y="431" text-anchor="middle" fill="#8d94b0" font-size="9.5">BGE Embeddings</text>
+
+    <rect x="160" y="280" width="86" height="34" rx="17" fill="#161b2a" stroke="#565c7a" stroke-width="0.7"/>
+    <text x="203" y="301" text-anchor="middle" fill="#8d94b0" font-size="9.5">NiceGUI</text>
+
+    <rect x="160" y="440" width="86" height="34" rx="17" fill="#161b2a" stroke="#565c7a" stroke-width="0.7"/>
+    <text x="203" y="461" text-anchor="middle" fill="#8d94b0" font-size="9.5">SQLAlchemy</text>
+
+    <rect x="858" y="360" width="76" height="34" rx="17" fill="#161b2a" stroke="#565c7a" stroke-width="0.7"/>
+    <text x="896" y="381" text-anchor="middle" fill="#8d94b0" font-size="9.5">Docker</text>
+
+    <!-- ===== 外侧装饰 ===== -->
+    <circle cx="550" cy="370" r="340" fill="none" stroke="#2d2e4a" stroke-width="0.3" stroke-dasharray="2,10" opacity="0.2"/>
+
+    <!-- 顶部标语 -->
+    <rect x="400" y="30" width="300" height="28" rx="14" fill="#1a1e30" stroke="#6c63ff" stroke-width="0.8" opacity="0.9"/>
+    <text x="550" y="49" text-anchor="middle" fill="#c4c0ff" font-size="11" letter-spacing="2">使用 → 反馈 → 优化 → 更好用</text>
+
+    <!-- 底部场景说明 -->
+    <text x="550" y="705" text-anchor="middle" fill="#4a4f62" font-size="10">面向地质形变监测 · 水文监测等科研场景</text>
+  </svg>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#4ade80"></div>专业数据分析</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#38bdf8"></div>知识检索</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f472b6"></div>自动报告</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#fbbf24"></div>自我成长</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#565c7a"></div>基础技术栈</div>
+  </div>
+
+  <p class="footer">Research Agent — Self-Growing AI Data Analysis Assistant</p>
+</div>
+</body>
+</html>

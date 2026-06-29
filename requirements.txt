@@ -1,59 +1,30 @@
-# =============================================================================
-# Research Agent — 环境依赖
-# =============================================================================
-
-# --- Web 框架 ---
-fastapi>=0.110.0
+﻿fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 python-multipart>=0.0.6
-
-# --- 数据校验 ---
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
-
-# --- 数据库 ---
 sqlalchemy>=2.0.25
 alembic>=1.13.0
-
-# --- 网络请求 ---
 httpx>=0.26.0
-
-# --- 数据分析 ---
 numpy>=1.26.0
 pandas>=2.1.0
 scipy>=1.12.0
 statsmodels>=0.14.0
 openpyxl>=3.1.0
-
-# --- 可视化 ---
 matplotlib>=3.8.0
 plotly>=5.18.0
-
-# --- AI / LLM ---
 langchain>=0.2.0
 langchain-community>=0.2.0
 openai>=1.12.0
 tiktoken>=0.6.0
-
-# --- 向量检索 ---
 chromadb>=0.5.0
 sentence-transformers>=2.3.0
 pdfplumber>=0.10.0
-
-# --- 报告生成 ---
 jinja2>=3.1.0
 python-docx>=1.1.0
-
-# --- 前端 ---
 nicegui>=1.4.0
-
-# --- 测试 ---
 pytest>=7.4.0
 pytest-asyncio>=0.23.0
 pytest-cov>=4.1.0
-
-# --- 代码质量 ---
 ruff>=0.1.0
-
-# --- 其他 ---
 python-dotenv>=1.0.0
