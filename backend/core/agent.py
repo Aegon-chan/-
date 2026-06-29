@@ -1,8 +1,7 @@
-"""
+﻿"""
 智能体核心引擎。
 
 协调多模型调用、知识检索、数据分析、记忆管理和自我成长。
-采用 ReAct（Reasoning + Acting）模式执行任务。
 """
 
 from __future__ import annotations
@@ -24,9 +23,11 @@ class ResearchAgent:
 
     async def _get_llm(self) -> BaseLLM:
         if self._llm is None:
-            self._llm = ModelRegistry.get_llm(self.model_id)
+            self._llm = ModelRegistry.get_llm_with_fallback(self.model_id)
             if self._llm is None:
-                raise ValueError(f"模型 {self.model_id} 未注册")
+                raise ValueError(
+                    "没有可用的 AI 模型。请在 .env 中配置 API Key 后重启服务。"
+                )
         return self._llm
 
     async def chat(self, user_input: str) -> ModelResponse:
@@ -56,8 +57,8 @@ class ResearchAgent:
     async def _retrieve_context(self, query: str) -> str:
         """从知识库检索相关背景信息（RAG）"""
         try:
-            from backend.retrieval.vector_store import VectorStore
-            store = VectorStore()
+            from backend.retrieval.vector_store import get_vector_store
+            store = get_vector_store()
             results = await store.search(query, top_k=3)
             if results:
                 return "\n---\n".join(r["content"] for r in results)

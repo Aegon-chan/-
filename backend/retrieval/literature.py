@@ -1,9 +1,22 @@
-"""历史文献检索模块"""
+﻿"""历史文献检索模块"""
 from __future__ import annotations
+
+from backend.retrieval.vector_store import get_vector_store
 
 
 class LiteratureRetriever:
-    """文献检索器"""
+    """文献检索器（查询 collection=literature）"""
 
-    async def search(self, query: str, top_k: int = 5) -> list:
-        return []
+    COLLECTION = "literature"
+
+    async def search(self, query: str, top_k: int = 5) -> list[dict]:
+        """检索历史文献"""
+        store = get_vector_store()
+        return await store.search(query, top_k=top_k, collection_name=self.COLLECTION)
+
+    async def add(self, doc_id: str, content: str, metadata: dict = None) -> None:
+        """添加文献"""
+        store = get_vector_store()
+        await store.add_document(
+            doc_id, content, metadata=metadata, collection_name=self.COLLECTION
+        )

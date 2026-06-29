@@ -1,4 +1,4 @@
-"""
+﻿"""
 模型注册表。
 
 管理所有已注册的 AI 模型适配器，支持运行时动态添加/移除/切换。
@@ -38,6 +38,29 @@ class ModelRegistry:
         """获取 LLM 实例"""
         model_id = model_id or cls._default_llm
         return cls._llms.get(model_id)
+
+    @classmethod
+    def get_llm_with_fallback(cls, model_id: Optional[str] = None) -> Optional[BaseLLM]:
+        """获取 LLM，带 fallback 链。
+
+        优先级: 指定模型 → 默认模型 → 任意已注册模型
+        """
+        # 1. 尝试指定模型
+        llm = cls._llms.get(model_id) if model_id else None
+        if llm:
+            return llm
+
+        # 2. 尝试默认模型
+        if model_id != cls._default_llm and cls._default_llm:
+            llm = cls._llms.get(cls._default_llm)
+            if llm:
+                return llm
+
+        # 3. 任意可用模型
+        for mid in cls._llms:
+            return cls._llms[mid]
+
+        return None
 
     @classmethod
     def get_embedding(cls, model_id: Optional[str] = None) -> Optional[BaseEmbedding]:
