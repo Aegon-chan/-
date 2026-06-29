@@ -1,4 +1,4 @@
-﻿"""记忆权重优化模块"""
+"""记忆权重优化模块"""
 from __future__ import annotations
 
 

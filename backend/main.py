@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.config import settings
-from backend.db.session import engine, Base
+from backend.db.session import async_engine as engine, Base
 
 
 @asynccontextmanager

@@ -1,4 +1,4 @@
-﻿"""反馈收集与处理模块"""
+"""反馈收集与处理模块"""
 from __future__ import annotations
 
 

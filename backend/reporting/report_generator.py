@@ -1,4 +1,4 @@
-﻿"""报告生成引擎"""
+"""报告生成引擎"""
 from __future__ import annotations
 
 from pathlib import Path

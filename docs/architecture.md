@@ -1,4 +1,4 @@
-﻿# Research Agent — 架构设计文档
+# Research Agent — 架构设计文档
 
 ## 系统架构图
 

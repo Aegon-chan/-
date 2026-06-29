@@ -1,4 +1,4 @@
-﻿"""Research Agent — 基本测试"""
+"""Research Agent — 基本测试"""
 from __future__ import annotations
 
 from backend.config import settings

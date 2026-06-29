@@ -1,4 +1,4 @@
-﻿"""历史文献检索模块"""
+"""历史文献检索模块"""
 from __future__ import annotations
 
 

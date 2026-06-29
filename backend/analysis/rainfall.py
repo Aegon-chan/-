@@ -1,4 +1,4 @@
-﻿"""雨量数据分析模块"""
+"""雨量数据分析模块"""
 from __future__ import annotations
 
 

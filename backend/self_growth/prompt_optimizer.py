@@ -1,4 +1,4 @@
-﻿"""Prompt 自动优化模块（APE）"""
+"""Prompt 自动优化模块（APE）"""
 from __future__ import annotations
 
 

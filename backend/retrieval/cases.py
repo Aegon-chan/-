@@ -1,4 +1,4 @@
-﻿"""监测案例检索模块"""
+"""监测案例检索模块"""
 from __future__ import annotations
 
 

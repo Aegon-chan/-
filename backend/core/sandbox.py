@@ -11,7 +11,10 @@ import os
 import shutil
 import subprocess
 import tempfile
-import resource
+try:
+    import resource
+except ImportError:
+    resource = None
 from pathlib import Path
 from typing import Optional
 
