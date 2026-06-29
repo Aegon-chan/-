@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# Environment
+.env
+*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated
+*.db
+*.sqlite
+*.log
+reports/output/
+data/raw/
+data/processed/
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# ML Models
+*.pt
+*.pth
+*.bin
+*.gguf
+model_cache/
+
+# Frontend
+node_modules/
+.next/
+dist/
