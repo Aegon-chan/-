@@ -1,4 +1,4 @@
-﻿"""孔隙水压力分析模块"""
+"""孔隙水压力分析模块"""
 from __future__ import annotations
 
 import numpy as np

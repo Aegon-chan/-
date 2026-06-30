@@ -1,4 +1,4 @@
-﻿"""create_initial_tables
+"""create_initial_tables
 
 Revision ID: b8a3c1d4e5f6
 Revises: 575ce7cf7325

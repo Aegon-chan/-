@@ -1,4 +1,4 @@
-﻿"""AI 模型接入模块"""
+"""AI 模型接入模块"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-﻿"""地下水位数据分析模块"""
+"""地下水位数据分析模块"""
 from __future__ import annotations
 
 import numpy as np

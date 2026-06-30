@@ -1,4 +1,4 @@
-﻿"""对话 API 路由"""
+"""对话 API 路由"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends

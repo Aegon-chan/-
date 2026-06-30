@@ -1,4 +1,4 @@
-﻿"""模型管理 API"""
+"""模型管理 API"""
 from __future__ import annotations
 
 from fastapi import APIRouter

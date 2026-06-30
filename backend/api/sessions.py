@@ -1,4 +1,4 @@
-﻿"""会话管理 API"""
+"""会话管理 API"""
 from __future__ import annotations
 
 from datetime import datetime

@@ -1,4 +1,4 @@
-﻿"""案例与知识检索模块"""
+"""案例与知识检索模块"""
 from __future__ import annotations
 
 from .vector_store import VectorStore, get_vector_store
