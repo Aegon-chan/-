@@ -23,6 +23,7 @@ from backend.self_growth.feedback import FeedbackCollector
 from backend.self_growth.prompt_optimizer import PromptOptimizer
 from backend.self_growth.memory_optimizer import MemoryOptimizer
 from backend.self_growth.finetune import FineTuner
+from backend.self_growth.progressive import ProgressiveLearner
 
 logger = logging.getLogger("research_agent.core")
 
@@ -133,6 +134,9 @@ class ResearchAgent:
         self._optimization_thread: Optional[threading.Thread] = None
 
         # 启动后台优化线程
+        self._progressive = ProgressiveLearner()
+        self._learning_mode: bool = False
+
         if self._optimization_enabled:
             self._start_optimization_thread()
 
@@ -1035,6 +1039,30 @@ class ResearchAgent:
             "prompt": prompt_versions,
             "optimization_enabled": self._optimization_enabled,
             "feedbacks_since_optimization": self._feedbacks_since_optimization,
+        "progressive_learning": {
+            "learning_mode": self._learning_mode,
+            "task_types": list(self._progressive.task_history.keys()),
+        },
+        }
+
+    def record_tool_execution(self, tool_name: str, duration_ms: float, success: bool = True) -> None:
+        """Track tool execution for progressive learning."""
+        self._progressive.record_task(tool_name, duration_ms, success)
+
+    def set_learning_mode(self, enabled: bool) -> None:
+        """Enable or disable experimental learning mode."""
+        self._learning_mode = enabled
+        self._progressive.learning_enabled = enabled
+        logger.info("Learning mode %s", "enabled" if enabled else "disabled")
+
+    def get_progressive_stats(self) -> dict:
+        """Get progressive learning statistics."""
+        task_types = list(self._progressive.task_history.keys())
+        return {
+            "learning_mode": self._learning_mode,
+            "tracked_tasks": len(task_types),
+            "task_types": task_types,
+            "stats": {t: self._progressive.get_task_stats(t) for t in task_types},
         }
 
     def toggle_optimization(self, enabled: Optional[bool] = None) -> bool:

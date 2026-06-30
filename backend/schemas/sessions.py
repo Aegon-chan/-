@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 class SessionCreate(BaseModel):
     """创建会话请求"""
+    user_id: str = Field("default", description="user ID")
     title: str = Field("新会话", description="会话标题")
     model_id: str = Field("deepseek-chat", description="使用的模型 ID")
     system_prompt: str = Field("", description="系统提示词")

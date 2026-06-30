@@ -32,6 +32,7 @@ async def create_session(
         title=body.title,
         model_id=body.model_id,
         system_prompt=body.system_prompt,
+        user_id=body.user_id,
     )
     db.add(session)
     await db.flush()

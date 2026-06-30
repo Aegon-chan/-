@@ -18,6 +18,8 @@ from backend.config import settings
 from backend.db.session import async_engine as engine
 from backend.core.exceptions import AppException
 
+_start_time: float = 0.0
+
 logger = logging.getLogger("research_agent")
 
 
@@ -127,7 +129,87 @@ app.include_router(api_router, prefix="/api/v1")
 # --- 健康检查 ---
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "app": settings.app_name, "env": settings.app_env}
+    """Enhanced health check with component status."""
+    import os, time
+    from backend.db.session import sync_engine
+    from backend.models.registry import ModelRegistry
+    from datetime import datetime, timezone
+
+    checks = {"database": False, "models_registered": 0, "disk_space": "unknown"}
+    try:
+        with sync_engine.connect() as conn:
+            conn.execute(sync_engine.text("SELECT 1"))
+            checks["database"] = True
+    except Exception:
+        checks["database"] = False
+
+    try:
+        checks["models_registered"] = len(ModelRegistry.list_models())
+    except Exception:
+        pass
+
+    data_dir = settings.data_dir
+    try:
+        if data_dir.exists():
+            usage = sum(f.stat().st_size for f in data_dir.rglob("*") if f.is_file())
+            checks["disk_space"] = f"{usage / 1024 / 1024:.1f} MB"
+    except Exception:
+        pass
+
+    checks["feature_self_growth"] = settings.feature_self_growth
+    checks["feature_feedback"] = settings.feature_feedback
+    checks["feature_finetune"] = settings.feature_finetune
+
+    return {
+        "status": "ok",
+        "app": settings.app_name,
+        "version": "0.1.0",
+        "env": settings.app_env,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "uptime": time.time() - _start_time if "_start_time" in dir() else 0,
+        "checks": checks,
+    }
+
+# --- Prometheus Metrics Endpoint ---
+@app.get("/metrics")
+async def metrics_endpoint():
+    """Expose basic Prometheus-style metrics."""
+    import os, time
+    from backend.models.registry import ModelRegistry
+
+    lines = []
+    lines.append("# HELP research_agent_info Static metadata about Research Agent")
+    lines.append("# TYPE research_agent_info gauge")
+    lines.append(f'research_agent_info{{env="{settings.app_env}",version="0.1.0"}} 1')
+    lines.append("")
+    lines.append("# HELP research_agent_models_registered Number of registered LLM models")
+    lines.append("# TYPE research_agent_models_registered gauge")
+    try:
+        models = ModelRegistry.list_models()
+        llm_count = sum(1 for m in models if m["type"] == "llm")
+    except Exception:
+        llm_count = 0
+    lines.append(f"research_agent_models_registered {llm_count}")
+    lines.append("")
+
+    lines.append("# HELP research_agent_database_up Whether the database is reachable")
+    lines.append("# TYPE research_agent_database_up gauge")
+    try:
+        from backend.db.session import sync_engine
+        with sync_engine.connect() as conn:
+            conn.execute(sync_engine.text("SELECT 1"))
+        lines.append("research_agent_database_up 1")
+    except Exception:
+        lines.append("research_agent_database_up 0")
+    lines.append("")
+
+    lines.append("# HELP research_agent_features Feature flag states")
+    lines.append("# TYPE research_agent_features gauge")
+    lines.append(f'research_agent_features{{feature="self_growth"}} {"1" if settings.feature_self_growth else "0"}')
+    lines.append(f'research_agent_features{{feature="feedback"}} {"1" if settings.feature_feedback else "0"}')
+    lines.append(f'research_agent_features{{feature="finetune"}} {"1" if settings.feature_finetune else "0"}')
+
+    return "\n".join(lines) + "\n"
 
 
 # --- 直接运行 ---

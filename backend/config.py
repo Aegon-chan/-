@@ -62,6 +62,16 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_file: str = "./data/logs/research_agent.log"
 
+    # --- Feature Flags ---
+    feature_self_growth: bool = True
+    feature_feedback: bool = True
+    feature_finetune: bool = False
+    feature_realtime_reports: bool = True
+
+    # --- Monitoring / Metrics ---
+    metrics_enabled: bool = True
+    metrics_port: int = 9090
+
     @property
     def data_dir(self) -> Path:
         return Path("./data").resolve()
