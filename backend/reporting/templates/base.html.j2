@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ title }}</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans SC",sans-serif; color:#1a1a2e; background:#f8f9fa; line-height:1.7; font-size:14px; }
+.wrapper { max-width:1000px; margin:0 auto; padding:32px 24px; }
+.header { text-align:center; padding:28px 0 20px; border-bottom:2px solid #4C72B0; margin-bottom:24px; }
+.header h1 { font-size:22px; color:#4C72B0; margin-bottom:6px; }
+.header .meta { color:#666; font-size:13px; }
+.section { background:#fff; border-radius:6px; padding:20px 24px; margin-bottom:20px; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
+.section h2 { font-size:17px; color:#4C72B0; border-left:3px solid #4C72B0; padding-left:10px; margin-bottom:12px; }
+.chart-container { width:100%; margin:12px 0; }
+table { width:100%; border-collapse:collapse; margin:10px 0; font-size:13px; }
+th { background:#4C72B0; color:#fff; padding:8px 12px; text-align:left; font-weight:500; }
+td { padding:6px 12px; border-bottom:1px solid #eee; }
+tr:hover td { background:#f0f4ff; }
+.summary-box { background:#eef3fa; border-radius:6px; padding:16px 20px; margin-bottom:20px; border-left:4px solid #4C72B0; }
+.footer { text-align:center; padding:24px 0 12px; color:#999; font-size:12px; border-top:1px solid #e0e0e0; margin-top:24px; }
+@media print { .wrapper{max-width:100%;padding:0} .section{box-shadow:none;border:1px solid #ddd} }
+</style>
+</head>
+<body>
+<div class="wrapper">
+<div class="header">
+<h1>{{ title }}</h1>
+<div class="meta">{{ date }} | {{ report_type }} | {{ metadata.get("site", "") }}</div>
+</div>
+{% if summary %}<div class="summary-box"><p><strong>摘要:</strong> {{ summary }}</p></div>{% endif %}
+{% block content %}{% endblock %}
+{% if conclusion %}
+<div class="section"><h2>结论与建议</h2><div class="content"><p>{{ conclusion }}</p></div></div>
+{% endif %}
+<div class="footer">由 Research Agent 自动生成 | {{ date }}</div>
+</div>
+</body>
+</html>
