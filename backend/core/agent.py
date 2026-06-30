@@ -1,4 +1,4 @@
-﻿"""
+"""
 ResearchAgent —— 核心智能体
 
 整合 NL2Query、记忆系统、策略库、反馈闭环、Prompt 优化、LoRA 微调。
@@ -11,8 +11,9 @@ import asyncio
 import logging
 import threading
 import time
+import uuid
 from datetime import datetime
-from typing import AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional
 
 from backend.models.base import BaseLLM, Message, ModelResponse
 from backend.models.registry import ModelRegistry
@@ -24,6 +25,47 @@ from backend.self_growth.memory_optimizer import MemoryOptimizer
 from backend.self_growth.finetune import FineTuner
 
 logger = logging.getLogger("research_agent.core")
+
+# ---------------------------------------------------------------------------
+# ReAct 系统提示
+# ---------------------------------------------------------------------------
+
+REACT_SYSTEM_PROMPT = """你是 Research Agent，一个具备推理和行动能力的科研数据分析智能体。
+
+请按照以下步骤思考并解决问题：
+
+## 可用工具
+
+1. `analyze_data(query: str, data_type: str)` - 将自然语言分析需求转化为 Python 代码并执行。
+   data_type 可选: gnss, insar, rainfall, groundwater, pore_pressure
+
+2. `search_knowledge(query: str)` - 在知识库中检索相关文档。
+
+3. `search_memory(query: str)` - 在长期记忆中检索用户的偏好、知识和经验。
+
+4. `generate_report(report_type: str, data: dict)` - 生成监测报告（html/docx/pdf）。
+   report_type 可选: daily, weekly, monthly, special
+
+5. `final_answer(answer: str)` - 输出最终答案，结束推理。
+
+## 推理格式
+
+每次输出必须包含以下 JSON 结构（只输出 JSON，不要有其他文字）：
+
+```json
+{
+  "thought": "你当前的思考...",
+  "action": "工具名称或 final_answer",
+  "action_input": {"参数名": "参数值"}
+}
+```
+
+## 规则
+- 每次只调用一个工具
+- 根据观察结果决定下一步行动
+- 分析问题时一步步推理
+- 当问题已解决或无法继续时，使用 final_answer 输出最终回答
+"""
 
 # ---------------------------------------------------------------------------
 # 记忆提取系统提示
@@ -75,6 +117,8 @@ class ResearchAgent:
         self._memory_store: Optional[MemoryStore] = None
         self._memory_enabled: bool = True
         self._extraction_llm: Optional[BaseLLM] = None
+        self._react_enabled: bool = False
+        self._react_max_iterations: int = 10
 
         # ---- 自成长模块 ----
         self._feedback_collector: Optional[FeedbackCollector] = None
@@ -213,6 +257,459 @@ class ResearchAgent:
                                 len(training_data), self.user_id)
         except Exception as e:
             logger.debug("Fine-tune check skipped: %s", e)
+
+    # ═══════════════════════════ 记忆检索 ═══════════════════════════
+
+    async def _recall_memories(self, query: str, top_k: int = 5) -> str:
+        """从向量/关键词检索记忆并格式化为上下文文本。"""
+        if not self._memory_enabled:
+            return ""
+        try:
+            keyword_results = self.memory.search(self.user_id, query, top_k=top_k)
+            pref_results = self.memory.get(self.user_id, memory_type="preference", top_k=3)
+            knowledge_results = self.memory.get(self.user_id, memory_type="knowledge", top_k=3)
+            experience_results = self.memory.get(self.user_id, memory_type="experience", top_k=3)
+            all_memories = keyword_results
+            seen_keys = set()
+            for m in pref_results + knowledge_results + experience_results:
+                if m.get("key") not in seen_keys:
+                    seen_keys.add(m.get("key"))
+                    if m not in all_memories:
+                        all_memories.append(m)
+            if not all_memories:
+                return ""
+            lines = []
+            for m in all_memories:
+                mtype = m.get("memory_type", "unknown")
+                key = m.get("key", "")
+                value = m.get("value", "")
+                weight = m.get("weight", 1.0)
+                if weight > 0.3:
+                    lines.append(f"[{mtype}] {key}: {value} (weight={weight:.2f})")
+            if not lines:
+                return ""
+            return "\n".join(lines)
+        except Exception as e:
+            logger.warning("Memory recall failed: %s", e)
+            return ""
+
+    async def _extract_and_store_memories(self, user_input: str, assistant_response: str) -> None:
+        """从对话中提取记忆并持久化。"""
+        if not self._memory_enabled or not self._extraction_llm:
+            return
+        try:
+            extract_messages = [
+                Message(role="system", content=MEMORY_EXTRACT_SYSTEM_PROMPT),
+                Message(role="user", content=f"用户: {user_input}\n\n助手: {assistant_response}"),
+            ]
+            response = await self._extraction_llm.chat(extract_messages, temperature=0.1, max_tokens=1000)
+            memories = json.loads(response.content)
+            if not isinstance(memories, list):
+                return
+            for mem in memories:
+                if not isinstance(mem, dict):
+                    continue
+                mtype = mem.get("type", "knowledge")
+                if mtype not in ("preference", "knowledge", "experience"):
+                    continue
+                key = str(mem.get("key", ""))[:256]
+                value = str(mem.get("value", ""))
+                weight = float(mem.get("weight", 0.5))
+                if key and value:
+                    self.memory.add(
+                        user_id=self.user_id,
+                        memory_type=mtype,
+                        key=key,
+                        value=value,
+                        weight=weight,
+                        source=f"session:{self.session_id}",
+                        metadata={"session_id": self.session_id},
+                    )
+                    logger.info("Memory stored: [%s] %s = %s", mtype, key, value[:60])
+        except (json.JSONDecodeError, Exception) as e:
+            logger.debug("Memory extraction skipped: %s", e)
+
+    # ═══════════════════════════ LLM 获取 ═══════════════════════════
+
+    async def _get_llm(self) -> BaseLLM:
+        if self._llm is None:
+            self._llm = ModelRegistry.get_llm_with_fallback(self.model_id)
+            if self._llm is None:
+                raise ValueError("未检测到可用的 AI 模型，请检查 .env 中 API Key 配置是否正确")
+        return self._llm
+
+    async def _get_extraction_llm(self) -> Optional[BaseLLM]:
+        if self._extraction_llm is None:
+            for mid in ["deepseek-chat", "gpt-4o", "moonshot-v1"]:
+                llm = ModelRegistry.get_llm(mid)
+                if llm is not None:
+                    self._extraction_llm = llm
+                    break
+        return self._extraction_llm
+
+    # ═══════════════════════════ 自我成长接口 ═══════════════════════════
+
+    def submit_feedback(self, message_id: str, rating: int, comment: str = "",
+                        tags: list = None, session_id: str = "") -> dict:
+        """提交反馈并触发异步记忆提取 + Prompt 优化。
+
+        Args:
+            message_id: 消息 ID
+            rating: 评分 (1-5, 或 -1 表示负面)
+            comment: 文字评价
+            tags: 标签列表
+            session_id: 会话 ID
+
+        Returns:
+            反馈收集结果
+        """
+        tags = tags or []
+
+        # 1. 收集反馈
+        result = self.feedback_collector.collect(
+            message_id=message_id,
+            rating=rating,
+            comment=comment,
+            tags=tags,
+            user_id=self.user_id,
+            session_id=session_id or self.session_id,
+        )
+        feedback_id = result.get("id", 0)
+
+        # 2. 使用 MemoryOptimizer 计算权重调整
+        weight_delta = self.memory_optimizer.update_weight(rating)
+
+        # 3. 将反馈内容写入记忆（异步风格，但同步执行）
+        try:
+            feedback_data = {
+                "comment": comment,
+                "tags": tags,
+                "rating": rating,
+                "content": f"评分 {rating}: {comment}",
+            }
+            memory_ids = self.memory.store_feedback_memory(self.user_id, feedback_data)
+            if memory_ids and weight_delta != 0:
+                for mid in memory_ids:
+                    self.memory.update_weight(mid, weight_delta)
+        except Exception as e:
+            logger.debug("Feedback memory store skipped: %s", e)
+
+        # 4. 计数优质反馈
+        if rating >= HIGH_QUALITY_RATING_THRESHOLD:
+            self._feedbacks_since_optimization += 1
+
+        return {
+            "feedback_id": feedback_id,
+            "rating": rating,
+            "weight_delta": weight_delta,
+            "memories_stored": len(locals().get("memory_ids", [])),
+            "message": "反馈已记录，系统将根据反馈持续优化" if rating >= HIGH_QUALITY_RATING_THRESHOLD else "反馈已记录",
+        }
+
+    def get_optimized_prompt(self, task_type: str) -> str:
+        """获取当前最优的 Prompt 模板。
+
+        Args:
+            task_type: 任务类型 (analysis / retrieval / report)
+
+        Returns:
+            优化后的 prompt 内容；若无则返回空字符串
+        """
+        try:
+            template = self.prompt_optimizer.get_template(task_type)
+            if template:
+                return template["content"]
+        except Exception as e:
+            logger.debug("Prompt retrieval failed: %s", e)
+        return ""
+
+    # ═══════════════════════════ 对话接口 ═══════════════════════════
+
+    async def chat(self, user_input: str) -> ModelResponse:
+        """处理用户对话，整合记忆上下文。"""
+        llm = await self._get_llm()
+        self.messages.append(Message(role="user", content=user_input))
+        memory_context = await self._recall_memories(user_input)
+        rag_context = await self._retrieve_context(user_input)
+        context_parts = []
+        if memory_context:
+            context_parts.append(f"[记忆]\n{memory_context}")
+        if rag_context:
+            context_parts.append(f"[知识]\n{rag_context}")
+        if context_parts:
+            combined = "\n\n".join(context_parts)
+            self.messages.append(Message(role="system", content=combined))
+        response = await llm.chat(self.messages)
+        self.messages.append(response)
+        extraction_llm = await self._get_extraction_llm()
+        if extraction_llm:
+            await self._extract_and_store_memories(user_input, response.content)
+        return response
+
+    async def stream_chat(self, user_input: str) -> AsyncIterator[str]:
+        """流式对话，逐 token 产出。"""
+        llm = await self._get_llm()
+        self.messages.append(Message(role="user", content=user_input))
+        memory_context = await self._recall_memories(user_input)
+        rag_context = await self._retrieve_context(user_input)
+        context_parts = []
+        if memory_context:
+            context_parts.append(f"[记忆]\n{memory_context}")
+        if rag_context:
+            context_parts.append(f"[知识]\n{rag_context}")
+        if context_parts:
+            combined = "\n\n".join(context_parts)
+            self.messages.append(Message(role="system", content=combined))
+        full_content = ""
+        async for chunk in llm.stream_chat(self.messages):
+            full_content += chunk
+            yield chunk
+        self.messages.append(Message(role="assistant", content=full_content))
+        extraction_llm = await self._get_extraction_llm()
+        if extraction_llm:
+            await self._extract_and_store_memories(user_input, full_content)
+
+    # ═══════════════════════════ NL2Query 接口 ═══════════════════════════
+
+    async def nl2query_code(self, query: str, data_type: str = "gnss", data_description: str = "") -> dict:
+        from backend.analysis.codegen import generate_code
+        return await generate_code(query, data_type, data_description, model_id=self.model_id)
+
+    async def nl2query_execute(self, query: str, data_type: str = "gnss", data_description: str = "", use_cache: bool = True) -> dict:
+        from backend.core.sandbox import CodeSandbox
+        from backend.analysis.cache import QueryCache
+        if use_cache:
+            cache = QueryCache()
+            cached = cache.get(query, data_type)
+            if cached is not None:
+                logger.info("NL2Query cache hit: %s...", query[:50])
+                return {"success": True, "from_cache": True, "code": cached.get("code", ""), "result": cached.get("result", {})}
+        gen_result = await self.nl2query_code(query, data_type, data_description)
+        if not gen_result["success"]:
+            return gen_result
+        code = gen_result["code"]
+        sandbox = CodeSandbox(timeout=30)
+        try:
+            exec_result = sandbox.execute_python(code)
+            output = exec_result.to_dict()
+            if use_cache and exec_result.success:
+                cache = QueryCache()
+                cache.set(query, data_type, code, output)
+            return {"success": exec_result.success, "from_cache": False, "code": code, "result": output}
+        finally:
+            sandbox.clean()
+
+    # ═══════════════════════════ RAG 检索 ═══════════════════════════
+
+    async def _retrieve_context(self, query: str) -> str:
+        try:
+            from backend.retrieval.vector_store import get_vector_store
+            store = get_vector_store()
+            results = await store.search(query, top_k=3)
+            if results:
+                return "\n---\n".join(r["content"] for r in results)
+        except Exception:
+            pass
+        return ""
+
+    # ═══════════════════════════ 工具方法 ═══════════════════════════
+
+    def get_message_history(self) -> list[Message]:
+        return self.messages
+
+    def clear_history(self) -> None:
+        self.messages.clear()
+
+    def list_memories(self, memory_type: Optional[str] = None, top_k: int = 20) -> list[dict]:
+        return self.memory.get(user_id=self.user_id, memory_type=memory_type, top_k=top_k)
+
+    def search_memories(self, query: str, top_k: int = 5) -> list[dict]:
+        return self.memory.search(user_id=self.user_id, query=query, top_k=top_k)
+
+    def delete_memory(self, memory_id: int) -> None:
+        self.memory.delete(memory_id)
+
+    def toggle_memory(self, enabled: Optional[bool] = None) -> bool:
+        if enabled is not None:
+            self._memory_enabled = enabled
+        else:
+            self._memory_enabled = not self._memory_enabled
+        return self._memory_enabled
+
+    def toggle_react(self, enabled = None) -> bool:
+        if enabled is not None:
+            self._react_enabled = enabled
+        else:
+            self._react_enabled = not self._react_enabled
+        return self._react_enabled
+
+    def set_react_max_iterations(self, n: int) -> None:
+        """Set max ReAct loop iterations."""
+        self._react_max_iterations = max(1, min(n, 50))
+
+    # ============================================================
+    # ReAct loop
+    # ============================================================
+
+    async def _react_tool_analyze(self, query: str, data_type: str = "gnss") -> str:
+        """Execute NL2Query analysis and return observation."""
+        try:
+            import json
+            result = await self.nl2query_execute(query=query, data_type=data_type, use_cache=True)
+            if result.get("success"):
+                res = result.get("result", {})
+                parts = []
+                stdout = res.get("stdout", "")
+                if stdout:
+                    parts.append("Output: " + stdout[:200])
+                figures = res.get("figures", [])
+                if figures:
+                    parts.append("Generated " + str(len(figures)) + " charts")
+                data = res.get("data", {})
+                if data:
+                    parts.append("Data: " + json.dumps(data, ensure_ascii=False)[:500])
+                if res.get("execution_time_ms", 0) > 0:
+                    parts.append("Time: " + str(int(res["execution_time_ms"])) + "ms")
+                return "\n".join(parts) if parts else "Analysis complete"
+            else:
+                return "Analysis failed: " + result.get("error", "unknown error")
+        except Exception as e:
+            return "Tool error: " + str(e)
+
+    async def _react_tool_search_knowledge(self, query: str) -> str:
+        """Search vector knowledge base."""
+        try:
+            from backend.retrieval.vector_store import get_vector_store
+            store = get_vector_store()
+            results = await store.search(query, top_k=3)
+            if not results:
+                return "No relevant content found"
+            lines = []
+            for i, r in enumerate(results):
+                lines.append("[Result " + str(i+1) + "] " + r["content"][:200])
+            return "\n".join(lines)
+        except Exception as e:
+            return "Knowledge search error: " + str(e)
+
+    async def _react_tool_search_memory(self, query: str) -> str:
+        """Search long-term memory."""
+        try:
+            if not self._memory_enabled:
+                return "Memory disabled"
+            results = self.search_memories(query, top_k=5)
+            if not results:
+                return "No memories found"
+            lines = []
+            for m in results:
+                mtype = m.get("memory_type", "unknown")
+                key = m.get("key", "")
+                value = m.get("value", "")[:200]
+                weight = m.get("weight", 0)
+                lines.append("[" + mtype + "] " + key + ": " + value + " (weight=" + str(round(weight, 2)) + ")")
+            return "\n".join(lines)
+        except Exception as e:
+            return "Memory search error: " + str(e)
+
+    async def _react_tool_generate_report(self, report_type: str, data: dict) -> str:
+        """Generate monitoring report."""
+        try:
+            from backend.reporting.report_generator import ReportGenerator
+            from datetime import datetime
+            gen = ReportGenerator()
+            data.setdefault("title", "Analysis Report")
+            data.setdefault("date", datetime.now().strftime("%Y-%m-%d %H:%M"))
+            path = gen.generate(data, template=report_type, output_format="html")
+            return "Report generated: " + str(path)
+        except Exception as e:
+            return "Report generation failed: " + str(e)
+
+    async def _react_step(self, user_input: str, history: list) -> dict:
+        """One ReAct iteration: think -> choose action."""
+        try:
+            llm = await self._get_llm()
+        except Exception:
+            return {"action": "final_answer", "action_input": {"answer": "No AI model available"}}
+        if not llm:
+            return {"action": "final_answer", "action_input": {"answer": "No AI model available"}}
+
+        messages = [Message(role="system", content=REACT_SYSTEM_PROMPT)]
+        for h in history:
+            messages.append(Message(role=h["role"], content=h["content"]))
+        messages.append(Message(role="user", content=user_input))
+
+        try:
+            response = await llm.chat(messages, temperature=0.3, max_tokens=2048)
+            content = response.content.strip()
+            if "```json" in content:
+                json_str = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                json_str = content.split("```")[1].split("```")[0].strip()
+            else:
+                json_str = content
+            import json
+            return json.loads(json_str)
+        except Exception as e:
+            return {"thought": "Parse error", "action": "final_answer", "action_input": {"answer": str(e)}}
+
+    async def react_chat(self, user_input: str):
+        """Full ReAct loop with think-act-observe iterations."""
+        self._react_enabled = True
+        self.messages.append(Message(role="user", content=user_input))
+        memory_context = await self._recall_memories(user_input)
+        rag_context = await self._retrieve_context(user_input)
+        react_history = []
+        if memory_context:
+            react_history.append({"role": "system", "content": "[Memory]\n" + memory_context})
+        if rag_context:
+            react_history.append({"role": "system", "content": "[Knowledge]\n" + rag_context})
+        yield "Starting ReAct analysis...\n\n"
+        for iteration in range(self._react_max_iterations):
+            step = await self._react_step(user_input, react_history)
+            thought = step.get("thought", "")
+            action = step.get("action", "final_answer")
+            action_input = step.get("action_input", {})
+            if thought:
+                yield "Step " + str(iteration+1) + " - Thought: " + thought + "\n\n"
+            if action == "final_answer":
+                answer = action_input.get("answer", "")
+                yield "Final answer:\n" + answer + "\n"
+                self.messages.append(Message(role="assistant", content=answer))
+                extraction_llm = await self._get_extraction_llm()
+                if extraction_llm:
+                    await self._extract_and_store_memories(user_input, answer)
+                return
+            elif action == "analyze_data":
+                yield "Action: analyze data\n"
+                observation = await self._react_tool_analyze(query=action_input.get("query", ""), data_type=action_input.get("data_type", "gnss"))
+                yield "Observation:\n" + observation[:500] + "\n\n"
+            elif action == "search_knowledge":
+                yield "Action: search knowledge\n"
+                observation = await self._react_tool_search_knowledge(query=action_input.get("query", ""))
+                yield "Observation:\n" + observation[:500] + "\n\n"
+            elif action == "search_memory":
+                yield "Action: search memory\n"
+                observation = await self._react_tool_search_memory(query=action_input.get("query", ""))
+                yield "Observation:\n" + observation[:500] + "\n\n"
+            elif action == "generate_report":
+                yield "Action: generate report\n"
+                observation = await self._react_tool_generate_report(report_type=action_input.get("report_type", "daily"), data=action_input.get("data", {}))
+                yield "Observation: " + observation + "\n\n"
+            else:
+                yield "Unknown action: " + str(action) + "\n\n"
+            import json
+            react_history.append({"role": "assistant", "content": json.dumps(step, ensure_ascii=False)})
+            react_history.append({"role": "system", "content": "Observation: " + observation})
+        yield "Max iterations reached.\n"
+
+    async def deploy_finetuned_model(self, model_name: str = "") -> str:
+        """Deploy fine-tuned model to registry for inference."""
+        try:
+            model_id = await self.fine_tuner.deploy_to_registry(model_name=model_name)
+            if model_id:
+                return model_id
+            return ""
+        except Exception as e:
+            return ""
 
     # ═══════════════════════════ 记忆检索 ═══════════════════════════
 

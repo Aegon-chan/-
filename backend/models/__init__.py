@@ -6,6 +6,7 @@ import logging
 
 from backend.models.base import BaseLLM, BaseEmbedding, Message, ModelResponse
 from backend.models.registry import ModelRegistry
+from backend.models.lora_adapter import LoRAAdapterLLM
 from backend.models.adapters import DeepSeekAdapter, KimiAdapter
 from backend.config import settings
 
@@ -79,5 +80,6 @@ def init_models() -> None:
 __all__ = [
     "BaseLLM", "BaseEmbedding", "Message", "ModelResponse",
     "ModelRegistry",
+    "LoRAAdapterLLM",
     "init_models",
 ]

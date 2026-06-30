@@ -140,6 +140,10 @@ class FineTuner:
                     "UPDATE finetune_jobs SET status='completed', output_path=?, error='Placeholder: dependencies not installed', completed_at=CURRENT_TIMESTAMP WHERE id=?",
                     (str(out_dir), job_id),
                 )
+                conn.execute(
+                    "INSERT INTO finetune_models (model_name, adapter_path, base_model, job_id) VALUES (?, ?, ?, ?)",
+                    (out_dir.name, str(out_dir), self.base_model_path, job_id),
+                )
 
             return str(out_dir)
 
@@ -191,13 +195,49 @@ class FineTuner:
             push_to_hub=False,
         )
 
-        # Train (simplified - real trainer integration needs more setup)
-        logger.info("LoRA training configured: r=%d, epochs=%d, output=%s",
-                    lora_r, num_epochs, output_dir)
+        # Train with proper HuggingFace Trainer
+        from transformers import Trainer as HFTrainer
+
+        def _tokenize_fn(examples):
+            tokenizer = __import__("transformers").AutoTokenizer
+            texts = []
+            for inst, inp, out in zip(examples["instruction"], examples["input"], examples["output"]):
+                text = "<|user|>\n" + str(inst) + "\n" + str(inp) + "</s><|assistant|>\n" + str(out) + "</s>"
+                texts.append(text)
+            tok = tokenizer(texts, truncation=True, max_length=512, padding="max_length")
+            tok["labels"] = tok["input_ids"].copy()
+            import copy
+            return dict(tok)
+
+        from datasets import load_dataset as _ld
+        ds = _ld("json", data_files=dataset_path, split="train")
+        tokenized_ds = ds.map(_tokenize_fn, batched=True, remove_columns=ds.column_names)
+
+        trainer = HFTrainer(
+            model=model,
+            args=training_args,
+            train_dataset=tokenized_ds,
+            tokenizer=tokenizer,
+        )
+
+        logger.info("LoRA training: r=%d, epochs=%d, samples=%d, output=%s",
+                    lora_r, num_epochs, len(tokenized_ds), output_dir)
+
+        if len(tokenized_ds) > 0:
+            trainer.train()
+
         model.save_pretrained(output_dir)
         tokenizer.save_pretrained(output_dir)
 
-        return {"output_dir": output_dir, "lora_r": lora_r, "epochs": num_epochs}
+        metrics = {}
+        if hasattr(trainer, "state") and trainer.state.log_history:
+            for entry in trainer.state.log_history:
+                if "loss" in entry:
+                    metrics["final_loss"] = entry.get("loss", 0)
+
+        logger.info("LoRA training complete: r=%d, epochs=%d, output=%s",
+                    lora_r, num_epochs, output_dir)
+        return {"output_dir": output_dir, "lora_r": lora_r, "epochs": num_epochs, **metrics}
 
     def _create_placeholder_adapter(self, output_dir: str):
         """Create adapter config file for documentation purposes."""
@@ -232,6 +272,60 @@ class FineTuner:
             conn.execute("UPDATE finetune_models SET is_active=1 WHERE adapter_path=?", (model_path,))
         logger.info("Deployed model: %s", model_path)
         return True
+
+    async def deploy_to_registry(self, model_name: str = "") -> str:
+        """Deploy best LoRA model to ModelRegistry for inference."""
+        import sqlite3
+        models = self.list_models()
+        if not models:
+            logger.warning("No fine-tuned models available")
+            return ""
+
+        target = None
+        if model_name:
+            target = next((m for m in models if m.get("model_name") == model_name), None)
+        else:
+            target = next((m for m in models if m.get("is_active")), None)
+            if not target:
+                target = max(models, key=lambda m: m.get("score", 0))
+
+        if not target:
+            logger.warning("No suitable model found")
+            return ""
+
+        adapter_path = target.get("adapter_path", "")
+        base_model = target.get("base_model", "")
+        if not adapter_path or not base_model:
+            logger.warning("Model missing path info")
+            return ""
+
+        try:
+            from backend.models.lora_adapter import LoRAAdapterLLM
+            from backend.models.registry import ModelRegistry
+
+            model_id = "lora-" + target.get("model_name", "finetuned")
+            ModelRegistry.remove_llm(model_id)
+
+            adapter = LoRAAdapterLLM(
+                model_id=model_id,
+                base_model_path=base_model,
+                adapter_path=adapter_path,
+            )
+            ModelRegistry.register_llm(model_id, adapter, set_default=False)
+
+            with sqlite3.connect(str(self.db_path)) as conn:
+                conn.execute("UPDATE finetune_models SET is_active=0")
+                conn.execute("UPDATE finetune_models SET is_active=1 WHERE adapter_path=?", (adapter_path,))
+
+            logger.info("Deployed: %s (%s)", model_id, adapter_path)
+            return model_id
+
+        except ImportError as e:
+            logger.warning("Cannot deploy LoRA: deps missing - %s", e)
+            return ""
+        except Exception as e:
+            logger.exception("Failed to deploy LoRA model")
+            return ""
 
     def list_models(self) -> list[dict]:
         """List all fine-tuned models."""
