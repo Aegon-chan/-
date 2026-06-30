@@ -149,7 +149,7 @@ Phase 1 鈹€鈹€鈹€ Phase 2 鈹€鈹€鈹€ Phase 3 鈹€鈹€鈹€
 
 - [ ] NiceGUI 鈫?Electron / Tauri 杩佺Щ璇勪及
 - [ ] 妗岄潰绔笓灞炲姛鑳斤細鏈湴鏂囦欢鎷栨嫿銆佺郴缁熸墭鐩樸€佺绾挎ā寮?
-- [ ] PyInstaller 鎵撳寘涓?Windows 鍙墽琛屾枃浠?
+- [x] **PyInstaller 鎵撳寘**锛氬畬鏁?spec + 鑷姩鍖?build 鑴氭湰
 
 ### 4.2 绉诲姩绔?
 
@@ -170,7 +170,7 @@ Phase 1 鈹€鈹€鈹€ Phase 2 鈹€鈹€鈹€ Phase 3 鈹€鈹€鈹€
 - [ ] 鎬ц兘浼樺寲锛氱紦瀛樼瓥鐣ワ紙Redis锛夈€佸紓姝ヤ换鍔￠槦鍒楋紙Celery锛?
 - [ ] 鏃ュ織绯荤粺锛氱粨鏋勫寲鏃ュ織 + 鏃ュ織杞浆
 - [ ] 鐩戞帶锛歅rometheus 鎸囨爣 + Grafana 闈㈡澘
-- [ ] Docker Compose 涓€閿儴缃?
+- [x] **Docker Compose 涓€閿儴缃?**锛氬畬鏁?Dockerfile + docker-compose.yml + 鍒濆鍖栧叆鍙?
 - [ ] 鐢ㄦ埛鏂囨。 & API 鏂囨。
 
 **Phase 4 浜や粯鐗?*锛氬彲瀹夎鐨勬闈㈢ + 绉诲姩绔簲鐢紝杈惧埌鐢熶骇绾у畨鍏ㄤ笌鎬ц兘鏍囧噯銆?

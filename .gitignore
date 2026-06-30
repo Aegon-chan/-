@@ -48,3 +48,13 @@ dist/
 
 # Data directories\ndata/
 data/
+
+# PyInstaller / Desktop build artifacts
+*.spec
+dist/
+build/
+*.exe
+
+
+# Generated reports (track the templates, not the output)
+reports/output/

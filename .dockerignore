@@ -1,0 +1,41 @@
+# =============================================================================
+# Research Agent — .dockerignore
+# =============================================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Version control
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local data (use Docker volumes instead)
+data/
+reports/output/
+model_cache/
+
+# Build artifacts
+dist/
+build/
+*.spec
