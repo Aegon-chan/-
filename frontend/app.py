@@ -29,6 +29,7 @@ logger = logging.getLogger("research_agent.frontend")
 # ───────────────────────────── 全局状态 ─────────────────────────────
 
 _session_id: str = ""
+_user_id: str = "default"
 _current_model: str = "deepseek-chat"
 _nl2query_history: list[dict] = []
 
@@ -42,7 +43,7 @@ def _ensure_session() -> str:
 
 def _get_agent() -> "ResearchAgent":
     from backend.core.agent import ResearchAgent
-    return ResearchAgent(session_id=_ensure_session(), model_id=_current_model)
+    return ResearchAgent(session_id=_ensure_session(), model_id=_current_model, user_id=_user_id)
 
 
 def _list_available_models() -> list[str]:
@@ -50,6 +51,36 @@ def _list_available_models() -> list[str]:
     models = ModelRegistry.list_models()
     llms = [m["model_id"] for m in models if m["type"] == "llm"]
     return llms if llms else ["（无可用模型）"]
+
+
+# ═══════════════════════════ 反馈助手 ═══════════════════════════
+
+
+def _submit_feedback(rating, label, up_btn, down_btn, status_label):
+    """提交对话消息反馈（点赞/点踩）"""
+    import requests
+    try:
+        resp = requests.post(
+            "http://localhost:8000/api/v1/feedback/collect",
+            params={
+                "message_id": _ensure_session(),
+                "rating": rating,
+                "user_id": _user_id,
+                "session_id": _session_id,
+            },
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            if rating > 0:
+                status_label.set_text("✓ 已赞")
+                up_btn.props("color=green")
+                down_btn.props("color=grey")
+            else:
+                status_label.set_text("✓ 已踩")
+                down_btn.props("color=red")
+                up_btn.props("color=grey")
+    except Exception:
+        status_label.set_text("反馈提交失败")
 
 
 # ═══════════════════════════ 导航栏 ═══════════════════════════
@@ -67,6 +98,8 @@ def _drawer():
                      ).props("flat icon=bar_chart")
             ui.button("知识库", on_click=lambda: ui.navigate.to("/knowledge")
                      ).props("flat icon=library_books")
+            ui.button("记忆", on_click=lambda: ui.navigate.to("/memories")
+                     ).props("flat icon=psychology")
             ui.button("设置", on_click=lambda: ui.navigate.to("/settings")
                      ).props("flat icon=settings")
 
@@ -144,8 +177,23 @@ def chat_page():
                     ui.markdown(f"**出错了:** {e}")
                     logger.exception("对话异常")
             finally:
+                # 显示反馈按钮
+                try:
+                    fb_row.classes(remove="hidden")
+                except Exception:
+                    pass
                 input_field.enable()
                 send_btn.enable()
+
+        # 反馈: 在当前助手消息下方添加 thumbs up/down
+        with chat_area:
+            fb_row = ui.row().classes("items-center gap-1 ml-12 hidden")
+            fb_row.id = f"fb_row_{id(chat_area)}"
+            fb_status = ui.label("").classes("text-xs text-gray-400")
+        with fb_row:
+            fb_up = ui.button(icon="thumb_up", on_click=lambda: _submit_feedback(1, "赞", fb_up, fb_down, fb_status)).props("flat dense round size=sm color=green")
+            fb_down = ui.button(icon="thumb_down", on_click=lambda: _submit_feedback(-1, "踩", fb_up, fb_down, fb_status)).props("flat dense round size=sm color=red")
+            ui.label("").classes("text-xs text-gray-400").bind_text_from(fb_status, "text")
 
         send_btn.on_click(do_send)
         input_field.on("keydown.enter", do_send)
@@ -601,6 +649,121 @@ def settings_page():
         ]
         for tag, desc in checks:
             ui.label(f"{tag} — {desc}").classes("text-sm")
+
+
+# ═══════════════════════════ 记忆浏览页面 ═══════════════════════════
+
+
+@ui.page("/memories")
+def memories_page():
+    _drawer()
+    _header("长期记忆管理")
+
+    with ui.column().classes("w-full max-w-4xl mx-auto p-4 gap-4"):
+        ui.markdown("## 长期记忆管理")
+
+        # 统计卡片
+        with ui.row().classes("w-full gap-4"):
+            stats_card = ui.card().classes("flex-1 p-3")
+            with stats_card:
+                ui.label("记忆统计").classes("text-sm font-bold")
+                stats_label = ui.label("加载中...").classes("text-xs text-gray-500")
+
+        # 搜索
+        with ui.row().classes("w-full items-center gap-2"):
+            search_input = ui.input(placeholder="搜索记忆...").classes("flex-1").props("clearable")
+            def do_search():
+                refresh_memories(search_input.value)
+            search_input.on("keydown.enter", do_search)
+            ui.button("搜索", icon="search", on_click=do_search).props("flat")
+
+        # 筛选
+        filter_select = ui.select(
+            label="记忆类型",
+            options={"": "全部", "preference": "偏好", "knowledge": "知识", "experience": "经验"},
+            value="",
+            on_change=lambda e: refresh_memories(search_input.value, e.value),
+        ).classes("w-44")
+
+        # 记忆列表
+        memory_list = ui.column().classes("w-full gap-2")
+
+        # 开关
+        with ui.row().classes("items-center gap-2"):
+            toggle_label = ui.label("记忆系统状态:").classes("text-sm")
+            toggle_switch = ui.switch(value=True, on_change=lambda e: _toggle_memory(e.value))
+
+    def refresh_memories(search_text="", mtype_filter=""):
+        memory_list.clear()
+        try:
+            agent = _get_agent()
+
+            # 显示统计
+            try:
+                stats = agent.memory.get_stats(_user_id)
+                stats_label.set_text(f"共 {stats['total']} 条记忆")
+                if stats.get("by_type"):
+                    parts = [f"{k}: {v['count']}条" for k, v in stats["by_type"].items()]
+                    stats_label.set_text(" | ".join(parts))
+            except Exception:
+                stats_label.set_text("记忆系统就绪")
+
+            if search_text:
+                memories = agent.search_memories(search_text, top_k=20)
+            elif mtype_filter:
+                memories = agent.list_memories(memory_type=mtype_filter, top_k=50)
+            else:
+                memories = agent.list_memories(top_k=50)
+
+            if not memories:
+                with memory_list:
+                    ui.label("（暂无记忆）").classes("text-gray-400 text-sm")
+                return
+
+            for m in memories:
+                with memory_list:
+                    with ui.card().classes("w-full p-3 gap-1"):
+                        # 头部: 类型 + 权重 + 删除
+                        with ui.row().classes("items-center justify-between"):
+                            type_labels = {"preference": "偏好", "knowledge": "知识", "experience": "经验"}
+                            type_badge = type_labels.get(m.get("memory_type", ""), m.get("memory_type", ""))
+                            ui.label(f"[{type_badge}]").classes("text-xs font-bold text-blue-600")
+                            ui.label(f"权重: {m.get('weight', 0):.2f}").classes("text-xs text-gray-400")
+                            ui.button(icon="delete", on_click=lambda mid=m["id"], rcb=refresh_memories: _delete_memory(mid, rcb)
+                                     ).props("flat dense round size=sm color=red")
+
+                        # Key
+                        ui.label(m.get("key", "")).classes("text-sm font-medium")
+
+                        # Value (max 3 lines)
+                        val = m.get("value", "")
+                        ui.label(val).classes("text-xs text-gray-600 line-clamp-3")
+
+                        # 来源
+                        source = m.get("source", "")
+                        if source:
+                            ui.label(f"来源: {source}").classes("text-xs text-gray-400")
+        except Exception:
+            pass
+
+    def _delete_memory(memory_id, refresh_cb):
+        try:
+            agent = _get_agent()
+            agent.delete_memory(memory_id)
+            ui.notify("记忆已删除")
+            refresh_cb()
+        except Exception as e:
+            ui.notify(f"删除失败: {e}", type="error")
+
+    def _toggle_memory(enabled):
+        try:
+            agent = _get_agent()
+            agent.toggle_memory(enabled=enabled)
+            ui.notify(f"记忆系统{'已开启' if enabled else '已关闭'}")
+        except Exception as e:
+            ui.notify(f"切换失败: {e}", type="error")
+
+    refresh_memories()
 
 
 # ═══════════════════════════ 启动入口 ═══════════════════════════
