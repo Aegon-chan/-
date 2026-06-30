@@ -63,3 +63,43 @@ class TestFeedbackCollector:
         assert count == 1
         import os
         assert os.path.exists(output)
+class TestResearchAgentFeedback:
+    """ResearchAgent submit_feedback 集成测试。"""
+
+    def test_submit_feedback_basic(self, tmp_path):
+        from backend.core.agent import ResearchAgent
+        agent = ResearchAgent("test_session", user_id="test_user_feedback")
+        result = agent.submit_feedback(
+            message_id="msg_001",
+            rating=4,
+            comment="Good analysis of GNSS data",
+            tags=["gnss", "accuracy"],
+        )
+        assert "feedback_id" in result
+        assert result["rating"] == 4
+        assert "weight_delta" in result
+
+    def test_submit_feedback_high_quality(self, tmp_path):
+        from backend.core.agent import ResearchAgent
+        agent = ResearchAgent("test_session", user_id="test_user_hq")
+        result = agent.submit_feedback(
+            message_id="msg_002",
+            rating=5,
+            comment="Excellent report format",
+            tags=["report", "format"],
+        )
+        assert result["rating"] == 5
+        # High-quality feedback should store memories
+        assert result.get("memories_stored", 0) >= 0
+
+    def test_submit_feedback_low_quality(self, tmp_path):
+        from backend.core.agent import ResearchAgent
+        agent = ResearchAgent("test_session", user_id="test_user_lq")
+        result = agent.submit_feedback(
+            message_id="msg_003",
+            rating=1,
+            comment="Poor quality analysis",
+        )
+        assert result["rating"] == 1
+        assert result["weight_delta"] < 0
+

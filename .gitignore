@@ -1,4 +1,4 @@
-# Python
+﻿# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -27,9 +27,7 @@ Thumbs.db
 *.db
 *.sqlite
 *.log
-reports/output/
-data/raw/
-data/processed/
+reports/output/raw/processed/
 
 # Testing
 .coverage
@@ -49,3 +47,4 @@ node_modules/
 dist/
 
 # Data directories\ndata/
+data/

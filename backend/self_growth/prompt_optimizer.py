@@ -1,4 +1,4 @@
-"""Prompt auto-optimization module (APE + version management)."""
+﻿"""Prompt auto-optimization module (APE + version management)."""
 from __future__ import annotations
 
 import json
@@ -127,3 +127,40 @@ class PromptOptimizer:
         except Exception as e:
             logger.error("Prompt optimization failed: %s", e)
             return current_content
+# ═══════════════════════════ 新 API 别名 ═══════════════════════════
+
+    def get_best_for_task(self, task_type: str) -> Optional[dict]:
+        """获取指定任务类型当前评分最高的 prompt 模板。
+
+        等价于 get_template(task_type)，提供更清晰的命名。
+        """
+        return self.get_template(task_type)
+
+    async def auto_optimize(self, task_type: str, feedback_content: dict,
+                            rating: int) -> Optional[str]:
+        """基于单条高质量反馈的自动 Prompt 优化。
+
+        当 rating >= 3 时，将该反馈作为正样本，调用 APE 优化主循环
+        生成新的 prompt 变体。
+
+        Args:
+            task_type: 任务类型
+            feedback_content: 包含 comment, tags 等字段的反馈字典
+            rating: 评分 (1-5)
+
+        Returns:
+            优化后的 prompt 内容，若未优化则返回 None
+        """
+        if rating < 3:
+            return None
+
+        feedbacks = [{
+            "rating": rating,
+            "comment": str(feedback_content.get("comment", "")),
+            "tags": feedback_content.get("tags", []),
+            "content": str(feedback_content.get("content", "")),
+        }]
+
+        content = await self.optimize(task_type, feedbacks)
+        return content if content else None
+

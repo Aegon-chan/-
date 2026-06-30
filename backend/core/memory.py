@@ -1,4 +1,4 @@
-"""
+﻿"""
 ???????
 
 ??????????????????????????
@@ -176,3 +176,106 @@ class MemoryStore:
     def __del__(self):
         if self._decay_timer and self._decay_timer.is_alive():
             self._decay_timer.cancel()
+# ═══════════════════════════ 反馈记忆集成 ═══════════════════════════
+
+    def store_feedback_memory(self, user_id: str, feedback_data: dict) -> list[int]:
+        """从反馈数据中提取并存储记忆。
+
+        将反馈内容（评论/标签/上下文）解析为偏好、知识、经验类记忆，
+        存入对应用户的记忆库。
+
+        Args:
+            user_id: 用户 ID
+            feedback_data: 反馈数据字典，含 comment, tags, rating, content 等字段
+
+        Returns:
+            创建的 memory id 列表
+        """
+        memory_ids = []
+        comment = str(feedback_data.get("comment", "")).strip()
+        tags = feedback_data.get("tags", [])
+        content = str(feedback_data.get("content", "")).strip()
+        rating = feedback_data.get("rating", 0)
+
+        if not comment and not tags and not content:
+            return memory_ids
+
+        # 从评论中提取关键信息作为知识
+        if comment and len(comment) > 3:
+            mid = self.add(
+                user_id=user_id,
+                memory_type="knowledge",
+                key=f"feedback_comment_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                value=comment,
+                weight=min(max(0.3, abs(rating) / 5.0), 1.0),
+                source="feedback",
+                metadata={"rating": rating, "type": "comment"},
+            )
+            memory_ids.append(mid)
+
+        # 从标签中提取偏好
+        valid_tags = [t for t in tags if isinstance(t, str) and len(t) > 1]
+        for tag in valid_tags:
+            mid = self.add(
+                user_id=user_id,
+                memory_type="preference",
+                key=f"tag_{tag}",
+                value=f"用户关注标签: {tag}",
+                weight=0.6,
+                source="feedback_tag",
+                metadata={"rating": rating, "tag": tag},
+            )
+            memory_ids.append(mid)
+
+        # 根据评分存储经验
+        if rating >= 4:
+            if content:
+                mid = self.add(
+                    user_id=user_id,
+                    memory_type="experience",
+                    key=f"high_rating_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                    value=f"优质反馈: {content[:200]}",
+                    weight=0.8,
+                    source="feedback_high_rating",
+                    metadata={"rating": rating},
+                )
+                memory_ids.append(mid)
+
+        return memory_ids
+
+    def get_relevant(self, user_id: str, query: str, memory_types: Optional[list] = None,
+                     top_k: int = 10) -> list[dict]:
+        """组合检索：关键词搜索 + 类型过滤，返回综合排序的记忆列表。
+
+        Args:
+            user_id: 用户 ID
+            query: 检索关键词
+            memory_types: 限定的记忆类型列表 (如 ['preference', 'knowledge'])
+            top_k: 返回最大条数
+
+        Returns:
+            按权重降序排列的记忆列表
+        """
+        # 并行搜索关键词 + 按类型获取
+        keyword_results = self.search(user_id, query, top_k=top_k)
+
+        type_results = []
+        if memory_types:
+            for mtype in memory_types:
+                type_results.extend(self.get(user_id, memory_type=mtype, top_k=top_k))
+        else:
+            type_results = self.get(user_id, top_k=top_k)
+
+        # 合并去重（by key）
+        seen_keys = set()
+        combined = []
+        for item in keyword_results + type_results:
+            key = item.get("key", "")
+            if key and key not in seen_keys:
+                seen_keys.add(key)
+                combined.append(item)
+
+        # 按权重降序
+        combined.sort(key=lambda x: x.get("weight", 0), reverse=True)
+        return combined[:top_k]
+
