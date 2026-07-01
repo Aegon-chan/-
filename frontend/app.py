@@ -697,20 +697,22 @@ def chat_page():
 
     # Initialize session (outside any with block to avoid parent-slot issues)
     def _init_session_sync():
-        """Initialize session: load local sessions, create if needed, load messages."""
+        """Initialize session: load local sessions, create if needed, load messages.
+
+        Also loads messages when returning to chat page with an existing session.
+        """
         if not _current_session_id:
             _refresh_sessions()
             if _sessions:
                 _switch_session(_sessions[0].get("id", ""))
             if not _current_session_id:
                 _create_session()
-            if _current_session_id:
-                _load_and_display_messages(chat_area, None)
-            try:
-                _render_session_list.refresh()
-            except Exception:
-                pass
-
+        if _current_session_id:
+            _load_and_display_messages(chat_area, None)
+        try:
+            _render_session_list.refresh()
+        except Exception:
+            pass
     ui.timer(0.5, _init_session_sync, once=True)
 
 @ui.page("/nl2query")
