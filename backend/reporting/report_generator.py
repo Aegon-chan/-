@@ -7,6 +7,7 @@ using Jinja2 templates (+ Plotly charts), python-docx, and fpdf2.
 from __future__ import annotations
 
 import logging
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -19,6 +20,11 @@ logger = logging.getLogger("research_agent.reporting")
 
 # ── 路径 ─────────────────────────────────────────────────────
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+# PyInstaller 环境下模板文件在 sys._MEIPASS/backend/reporting/templates
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    _mei_templates = Path(sys._MEIPASS) / "backend" / "reporting" / "templates"
+    if _mei_templates.exists():
+        _TEMPLATES_DIR = _mei_templates
 _DEFAULT_OUTPUT_DIR = Path.cwd() / "reports" / "output"
 
 

@@ -344,3 +344,201 @@ class FineTuner:
                 "SELECT * FROM finetune_jobs ORDER BY created_at DESC"
             ).fetchall()
             return [dict(r) for r in rows]
+
+# ═══════════════════════════ 反馈→训练数据管线 ═══════════════════════════
+
+import pathlib
+class FeedbackDatasetBuilder:
+    """Build HuggingFace Datasets from user feedback + conversation history.
+
+    Converts rated feedback records into instruction-following training data
+    suitable for LoRA fine-tuning.
+    """
+
+    def __init__(self, db_path: str = "./data/feedback.db",
+                 min_rating: int = 4, max_rating: int = 5,
+                 low_rating_max: int = 2):
+        self.db_path = pathlib.Path(db_path)
+        self.min_rating = min_rating
+        self.max_rating = max_rating
+        self.low_rating_max = low_rating_max
+
+    def fetch_feedback(self, user_id: str = "",
+                       limit: int = 1000) -> list[dict]:
+        """Fetch feedback records from SQLite database."""
+        import sqlite3
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            if user_id:
+                rows = conn.execute(
+                    "SELECT * FROM feedback WHERE user_id=? ORDER BY created_at DESC LIMIT ?",
+                    (user_id, limit)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM feedback ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            return [dict(r) for r in rows]
+
+    def _record_to_training(self, record: dict) -> dict | None:
+        """Convert a single feedback record to training format.
+
+        Returns a dict with instruction/input/output, or None if
+        the record lacks required fields.
+        """
+        metadata = {}
+        try:
+            metadata = json.loads(record.get("metadata", "{}"))
+        except (json.JSONDecodeError, TypeError):
+            metadata = {}
+
+        instruction = record.get("query", "") or metadata.get("query", "")
+        output = record.get("response", "") or metadata.get("response", "")
+        if not instruction and not output:
+            return None
+
+        if not instruction:
+            instruction = "Analyze the monitoring data"
+        if not output:
+            output = record.get("comment", "")
+
+        try:
+            tags = json.loads(record.get("tags", "[]"))
+        except (json.JSONDecodeError, TypeError):
+            tags = []
+
+        return {
+            "instruction": instruction,
+            "input": "",
+            "output": output,
+            "metadata": {
+                "rating": record.get("rating", 0),
+                "tags": tags,
+                "source": "feedback",
+                "feedback_id": record.get("id"),
+                "session_id": record.get("session_id", ""),
+            },
+        }
+
+    def build(self, db_path: str | None = None,
+              output_path: str = "",
+              user_id: str = "",
+              include_low_quality: bool = False) -> str:
+        """Build a JSONL training dataset from feedback records.
+
+        Args:
+            db_path: Override feedback database path.
+            output_path: Where to write the JSONL file.
+            user_id: Filter by user (empty = all users).
+            include_low_quality: If True, include low-rated samples as negative examples.
+
+        Returns:
+            Path to the generated JSONL file.
+        """
+        if db_path:
+            self.db_path = pathlib.Path(db_path)
+
+        records = self.fetch_feedback(user_id=user_id, limit=10000)
+
+        training_records = []
+        for rec in records:
+            rating = rec.get("rating", 0)
+
+            # High quality: explicit positive feedback
+            if self.min_rating <= rating <= self.max_rating:
+                tr = self._record_to_training(rec)
+                if tr:
+                    tr["metadata"]["quality"] = "high"
+                    training_records.append(tr)
+
+            # Low quality: explicit negative feedback
+            if include_low_quality and 0 < rating <= self.low_rating_max:
+                tr = self._record_to_training(rec)
+                if tr:
+                    tr["metadata"]["quality"] = "low"
+                    training_records.append(tr)
+
+        if not training_records:
+            logger.warning("No training records built from %d feedback entries", len(records))
+            # Return placeholder file
+            out_path = pathlib.Path(output_path or "data/training_data.jsonl")
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text("", encoding="utf-8")
+            return str(out_path)
+
+        out_path = pathlib.Path(output_path or f"data/training_data_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(out_path, "w", encoding="utf-8") as f:
+            for rec in training_records:
+                f.write(json.dumps(rec, ensure_ascii=False) + chr(10))
+
+
+        hq = sum(1 for r in training_records if r.get("metadata", {}).get("quality") == "high")
+        lq = sum(1 for r in training_records if r.get("metadata", {}).get("quality") == "low")
+        logger.info("Built training dataset: %d records (high=%d, low=%d) -> %s",
+                     len(training_records), hq, lq, out_path)
+        return str(out_path)
+
+    def build_from_conversations(self, conversations: list[dict],
+                                  output_path: str = "") -> str:
+        """Build dataset from conversation pairs (user + assistant messages).
+
+        Args:
+            conversations: List of dicts with keys "query" and "response",
+                          and optional "rating" and "tags".
+            output_path: Where to write the JSONL file.
+
+        Returns:
+            Path to the generated JSONL file.
+        """
+        records = []
+        for conv in conversations:
+            rating = conv.get("rating", 0)
+            if rating > 0 and rating < self.min_rating:
+                continue
+
+            record = {
+                "instruction": conv.get("query", ""),
+                "input": "",
+                "output": conv.get("response", ""),
+                "metadata": {
+                    "rating": rating,
+                    "tags": conv.get("tags", []),
+                    "source": "conversation",
+                    "quality": "high" if rating >= self.min_rating else "neutral",
+                },
+            }
+            if record["instruction"] and record["output"]:
+                records.append(record)
+
+        out_path = pathlib.Path(output_path or f"data/training_data_conv_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(out_path, "w", encoding="utf-8") as f:
+            for rec in records:
+                f.write(json.dumps(rec, ensure_ascii=False) + chr(10))
+
+
+        logger.info("Built conversation dataset: %d records -> %s", len(records), out_path)
+        return str(out_path)
+
+    def estimate_dataset_stats(self, db_path: str | None = None) -> dict:
+        """Estimate dataset composition without building it."""
+        if db_path:
+            self.db_path = pathlib.Path(db_path)
+
+        records = self.fetch_feedback(limit=100000)
+        total = len(records)
+        high = sum(1 for r in records if self.min_rating <= r.get("rating", 0) <= self.max_rating)
+        low = sum(1 for r in records if 0 < r.get("rating", 0) <= self.low_rating_max)
+        no_rating = sum(1 for r in records if not r.get("rating"))
+
+        return {
+            "total_feedback": total,
+            "high_quality_candidates": high,
+            "low_quality_candidates": low,
+            "unrated": no_rating,
+            "estimated_training_records": high,
+        }

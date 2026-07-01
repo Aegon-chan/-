@@ -127,6 +127,142 @@ class PromptOptimizer:
         except Exception as e:
             logger.error("Prompt optimization failed: %s", e)
             return current_content
+
+# ═══════════════════════════ APE 搜索算法 ═══════════════════════════
+
+    async def ape_search(self, task_type: str, candidate_prompts: list[str],
+                         eval_fn, population_size: int = 5,
+                         generations: int = 3, mutation_rate: float = 0.3) -> str:
+        """Automatic Prompt Engineering via evolutionary search."""
+        import random
+
+        current = self.get_template(task_type)
+        if current and current["content"] not in candidate_prompts:
+            candidate_prompts.insert(0, current["content"])
+
+        pool = candidate_prompts[:population_size]
+        best_prompt = pool[0]
+        best_score = 0.0
+
+        for gen in range(generations):
+            scored = []
+            for prompt in pool:
+                try:
+                    result = await eval_fn(prompt)
+                    score = result.get("score", 0.0)
+                except Exception as e:
+                    logger.warning("APE eval failed for prompt: %s", e)
+                    score = 0.0
+                scored.append((prompt, score))
+
+            scored.sort(key=lambda x: x[1], reverse=True)
+
+            if scored and scored[0][1] > best_score:
+                best_prompt = scored[0][0]
+                best_score = scored[0][1]
+                parent_v = current["version"] if current else 0
+                self.save_template(task_type, best_prompt, parent_version=parent_v)
+                logger.info("APE gen %d: new best score=%.3f for %s", gen, best_score, task_type)
+
+            top = [s[0] for s in scored[:max(2, population_size // 2)]]
+            pool = list(top)
+            while len(pool) < population_size:
+                parent = random.choice(top)
+                child = await self._mutate_prompt(parent, mutation_rate)
+                pool.append(child)
+
+        return best_prompt
+
+    async def _mutate_prompt(self, prompt: str, rate: float = 0.3) -> str:
+        """Generate a mutated variant of a prompt using LLM or local heuristics."""
+        import random
+        from backend.models.registry import ModelRegistry
+        from backend.models.base import Message
+
+        if len(prompt) < 200 or random.random() < 0.3:
+            lines = prompt.split(chr(10))
+            if random.random() < rate and len(lines) > 3:
+                idx = random.randint(0, len(lines) - 1)
+                if lines[idx].strip() and not lines[idx].strip().startswith("##"):
+                    words = lines[idx].split()
+                    if len(words) > 3:
+                        i = random.randint(0, len(words) - 2)
+                        words[i], words[i + 1] = words[i + 1], words[i]
+                        lines[idx] = " ".join(words)
+            mutated = chr(10).join(lines)
+            if mutated != prompt:
+                return mutated
+
+        mutation_prompt = (
+            "You are a prompt engineer. Rewrite the following prompt to create "
+            "a variant that might perform better. Keep the core instructions "
+            "but change the phrasing, structure, or emphasis."
+            + chr(10) + chr(10) + "Original prompt:" + chr(10) + "---" + chr(10) + prompt + chr(10) + "---" + chr(10) + chr(10)
+            + "Only output the rewritten prompt, no explanation."
+        )
+        try:
+            llm = ModelRegistry.get_llm_with_fallback()
+            if llm:
+                resp = await llm.chat([Message(role="user", content=mutation_prompt)],
+                                       temperature=0.8, max_tokens=2000)
+                mutated = resp.content.strip()
+                if mutated and len(mutated) > 50:
+                    return mutated
+        except Exception as e:
+            logger.warning("APE mutation via LLM failed: %s", e)
+
+        return prompt
+
+    def _regression_check(self, new_prompt: str, task_type: str,
+                          known_bad_cases: list[dict]) -> dict:
+        if not known_bad_cases:
+            return {"passed": True, "failed_cases": []}
+
+        failed = []
+        for case in known_bad_cases:
+            inp = case.get("input", "")
+            expected = case.get("expected_output", "")
+            if expected and inp:
+                prompt_lower = new_prompt.lower()
+                key_terms = [w for w in expected.lower().split() if len(w) > 3]
+                missing = [t for t in key_terms if t not in prompt_lower]
+                if len(missing) > len(key_terms) * 0.5:
+                    failed.append({"input": inp, "missing_terms": missing})
+
+        return {"passed": len(failed) == 0, "failed_cases": failed}
+
+    async def ab_test(self, task_type: str, prompt_a: str, prompt_b: str,
+                      test_inputs: list[str], eval_fn) -> dict:
+        scores_a = []
+        scores_b = []
+        for inp in test_inputs:
+            try:
+                ra = await eval_fn(prompt_a, inp)
+                rb = await eval_fn(prompt_b, inp)
+                scores_a.append(ra.get("score", 0))
+                scores_b.append(rb.get("score", 0))
+            except Exception as e:
+                logger.warning("A/B test eval failed for input: %s", e)
+
+        if not scores_a or not scores_b:
+            return {"winner": "unknown", "score_a": 0, "score_b": 0, "improvement": 0}
+
+        avg_a = sum(scores_a) / len(scores_a)
+        avg_b = sum(scores_b) / len(scores_b)
+        improvement = avg_b - avg_a
+
+        winner = "a" if avg_a >= avg_b else "b"
+        self.save_template(f"{task_type}_ab_a", prompt_a)
+        self.save_template(f"{task_type}_ab_b", prompt_b)
+
+        logger.info("A/B test [%s]: A=%.3f B=%.3f winner=%s improvement=%.3f",
+                     task_type, avg_a, avg_b, winner, improvement)
+        return {
+            "winner": winner,
+            "score_a": round(avg_a, 4),
+            "score_b": round(avg_b, 4),
+            "improvement": round(improvement, 4),
+        }
 # ═══════════════════════════ 新 API 别名 ═══════════════════════════
 
     def get_best_for_task(self, task_type: str) -> Optional[dict]:

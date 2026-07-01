@@ -23,6 +23,7 @@ from backend.self_growth.feedback import FeedbackCollector
 from backend.self_growth.prompt_optimizer import PromptOptimizer
 from backend.self_growth.memory_optimizer import MemoryOptimizer
 from backend.self_growth.finetune import FineTuner
+from backend.self_growth.implicit_feedback import ImplicitFeedbackCollector
 from backend.self_growth.progressive import ProgressiveLearner
 
 logger = logging.getLogger("research_agent.core")
@@ -134,13 +135,26 @@ class ResearchAgent:
         self._optimization_thread: Optional[threading.Thread] = None
 
         # 启动后台优化线程
+        self._implicit_feedback: Optional[ImplicitFeedbackCollector] = None
         self._progressive = ProgressiveLearner()
+
         self._learning_mode: bool = False
 
         if self._optimization_enabled:
             self._start_optimization_thread()
 
     # ═══════════════════════════ 核心属性 ═══════════════════════════
+
+    @property
+    def implicit_feedback(self) -> ImplicitFeedbackCollector:
+        """Lazy-initialized implicit feedback collector."""
+        if self._implicit_feedback is None:
+            from backend.config import settings
+            self._implicit_feedback = ImplicitFeedbackCollector(
+                db_path=f"./data/feedback_{self.user_id}.db",
+                enable=getattr(settings, "feature_implicit_feedback", True),
+            )
+        return self._implicit_feedback
 
     @property
     def strategy(self) -> StrategyLibrary:
@@ -161,6 +175,17 @@ class ResearchAgent:
             db_path = f"./data/feedback_{self.user_id}.db"
             self._feedback_collector = FeedbackCollector(db_path=db_path)
         return self._feedback_collector
+
+    @property
+    def implicit_feedback(self) -> ImplicitFeedbackCollector:
+        """Lazy-initialized implicit feedback collector."""
+        if self._implicit_feedback is None:
+            from backend.config import settings
+            self._implicit_feedback = ImplicitFeedbackCollector(
+                db_path=f"./data/feedback_{self.user_id}.db",
+                enable=getattr(settings, "feature_implicit_feedback", True),
+            )
+        return self._implicit_feedback
 
     @property
     def prompt_optimizer(self) -> PromptOptimizer:
@@ -435,6 +460,8 @@ class ResearchAgent:
         self.messages.append(Message(role="user", content=user_input))
         memory_context = await self._recall_memories(user_input)
         rag_context = await self._retrieve_context(user_input)
+        # Record implicit feedback signals
+        self.implicit_feedback.record_query(self.session_id, user_input, self.user_id)
         context_parts = []
         if memory_context:
             context_parts.append(f"[记忆]\n{memory_context}")
@@ -472,6 +499,19 @@ class ResearchAgent:
         extraction_llm = await self._get_extraction_llm()
         if extraction_llm:
             await self._extract_and_store_memories(user_input, full_content)
+
+    def load_history(self, messages: list[dict]) -> None:
+        """Load historical messages into the agent's conversation context.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content' keys.
+        """
+        from backend.models.base import Message as LLMMessage
+        for msg in messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role in ("user", "assistant", "system", "tool"):
+                self.messages.append(LLMMessage(role=role, content=content))
 
     # ═══════════════════════════ NL2Query 接口 ═══════════════════════════
 
@@ -550,6 +590,58 @@ class ResearchAgent:
     def set_react_max_iterations(self, n: int) -> None:
         """Set max ReAct loop iterations."""
         self._react_max_iterations = max(1, min(n, 50))
+
+    def get_optimization_stats(self) -> dict:
+        """Get complete self-growth optimization statistics."""
+        memory_stats = {}
+        try:
+            mems = self.memory.get(user_id=self.user_id, top_k=1000)
+            memory_stats = {
+                "total_count": len(mems),
+                "preference_count": sum(1 for m in mems if m.get("memory_type") == "preference"),
+                "knowledge_count": sum(1 for m in mems if m.get("memory_type") == "knowledge"),
+                "experience_count": sum(1 for m in mems if m.get("memory_type") == "experience"),
+                "avg_weight": round(sum(m.get("weight", 1.0) for m in mems) / max(len(mems), 1), 2),
+            }
+        except Exception as e:
+            memory_stats = {"error": str(e)}
+        feedback_stats = {}
+        try:
+            feedback_stats = self.feedback_collector.get_stats()
+        except Exception as e:
+            feedback_stats = {"error": str(e)}
+        prompt_stats = {}
+        try:
+            prompt_stats = {
+                "analysis": self.prompt_optimizer.get_best_for_task("analysis"),
+                "retrieval": self.prompt_optimizer.get_best_for_task("retrieval"),
+                "report": self.prompt_optimizer.get_best_for_task("report"),
+            }
+        except Exception as e:
+            prompt_stats = {"error": str(e)}
+        finetune_stats = {}
+        try:
+            finetune_stats = {
+                "models_count": len(self.fine_tuner.list_models()),
+                "models": self.fine_tuner.list_models(),
+            }
+        except Exception as e:
+            finetune_stats = {"error": str(e)}
+        return {
+            "user_id": self.user_id,
+            "memory": memory_stats,
+            "feedback": feedback_stats,
+            "finetune": finetune_stats,
+            "prompt": prompt_stats,
+            "optimization_enabled": self._optimization_enabled,
+        }
+
+    def toggle_optimization(self, enabled=None):
+        if enabled is not None:
+            self._optimization_enabled = enabled
+        else:
+            self._optimization_enabled = not self._optimization_enabled
+        return self._optimization_enabled
 
     # ============================================================
     # ReAct loop
@@ -714,366 +806,3 @@ class ResearchAgent:
             return ""
         except Exception as e:
             return ""
-
-    # ═══════════════════════════ 记忆检索 ═══════════════════════════
-
-    async def _recall_memories(self, query: str, top_k: int = 5) -> str:
-        """从向量/关键词检索记忆并格式化为上下文文本。"""
-        if not self._memory_enabled:
-            return ""
-        try:
-            keyword_results = self.memory.search(self.user_id, query, top_k=top_k)
-            pref_results = self.memory.get(self.user_id, memory_type="preference", top_k=3)
-            knowledge_results = self.memory.get(self.user_id, memory_type="knowledge", top_k=3)
-            experience_results = self.memory.get(self.user_id, memory_type="experience", top_k=3)
-            all_memories = keyword_results
-            seen_keys = set()
-            for m in pref_results + knowledge_results + experience_results:
-                if m.get("key") not in seen_keys:
-                    seen_keys.add(m.get("key"))
-                    if m not in all_memories:
-                        all_memories.append(m)
-            if not all_memories:
-                return ""
-            lines = []
-            for m in all_memories:
-                mtype = m.get("memory_type", "unknown")
-                key = m.get("key", "")
-                value = m.get("value", "")
-                weight = m.get("weight", 1.0)
-                if weight > 0.3:
-                    lines.append(f"[{mtype}] {key}: {value} (weight={weight:.2f})")
-            if not lines:
-                return ""
-            return "\n".join(lines)
-        except Exception as e:
-            logger.warning("Memory recall failed: %s", e)
-            return ""
-
-    async def _extract_and_store_memories(self, user_input: str, assistant_response: str) -> None:
-        """从对话中提取记忆并持久化。"""
-        if not self._memory_enabled or not self._extraction_llm:
-            return
-        try:
-            extract_messages = [
-                Message(role="system", content=MEMORY_EXTRACT_SYSTEM_PROMPT),
-                Message(role="user", content=f"用户: {user_input}\n\n助手: {assistant_response}"),
-            ]
-            response = await self._extraction_llm.chat(extract_messages, temperature=0.1, max_tokens=1000)
-            memories = json.loads(response.content)
-            if not isinstance(memories, list):
-                return
-            for mem in memories:
-                if not isinstance(mem, dict):
-                    continue
-                mtype = mem.get("type", "knowledge")
-                if mtype not in ("preference", "knowledge", "experience"):
-                    continue
-                key = str(mem.get("key", ""))[:256]
-                value = str(mem.get("value", ""))
-                weight = float(mem.get("weight", 0.5))
-                if key and value:
-                    self.memory.add(
-                        user_id=self.user_id,
-                        memory_type=mtype,
-                        key=key,
-                        value=value,
-                        weight=weight,
-                        source=f"session:{self.session_id}",
-                        metadata={"session_id": self.session_id},
-                    )
-                    logger.info("Memory stored: [%s] %s = %s", mtype, key, value[:60])
-        except (json.JSONDecodeError, Exception) as e:
-            logger.debug("Memory extraction skipped: %s", e)
-
-    # ═══════════════════════════ LLM 获取 ═══════════════════════════
-
-    async def _get_llm(self) -> BaseLLM:
-        if self._llm is None:
-            self._llm = ModelRegistry.get_llm_with_fallback(self.model_id)
-            if self._llm is None:
-                raise ValueError("未检测到可用的 AI 模型，请检查 .env 中 API Key 配置是否正确")
-        return self._llm
-
-    async def _get_extraction_llm(self) -> Optional[BaseLLM]:
-        if self._extraction_llm is None:
-            for mid in ["deepseek-chat", "gpt-4o", "moonshot-v1"]:
-                llm = ModelRegistry.get_llm(mid)
-                if llm is not None:
-                    self._extraction_llm = llm
-                    break
-        return self._extraction_llm
-
-    # ═══════════════════════════ 自我成长接口 ═══════════════════════════
-
-    def submit_feedback(self, message_id: str, rating: int, comment: str = "",
-                        tags: list = None, session_id: str = "") -> dict:
-        """提交反馈并触发异步记忆提取 + Prompt 优化。
-
-        Args:
-            message_id: 消息 ID
-            rating: 评分 (1-5, 或 -1 表示负面)
-            comment: 文字评价
-            tags: 标签列表
-            session_id: 会话 ID
-
-        Returns:
-            反馈收集结果
-        """
-        tags = tags or []
-
-        # 1. 收集反馈
-        result = self.feedback_collector.collect(
-            message_id=message_id,
-            rating=rating,
-            comment=comment,
-            tags=tags,
-            user_id=self.user_id,
-            session_id=session_id or self.session_id,
-        )
-        feedback_id = result.get("id", 0)
-
-        # 2. 使用 MemoryOptimizer 计算权重调整
-        weight_delta = self.memory_optimizer.update_weight(rating)
-
-        # 3. 将反馈内容写入记忆（异步风格，但同步执行）
-        try:
-            feedback_data = {
-                "comment": comment,
-                "tags": tags,
-                "rating": rating,
-                "content": f"评分 {rating}: {comment}",
-            }
-            memory_ids = self.memory.store_feedback_memory(self.user_id, feedback_data)
-            if memory_ids and weight_delta != 0:
-                for mid in memory_ids:
-                    self.memory.update_weight(mid, weight_delta)
-        except Exception as e:
-            logger.debug("Feedback memory store skipped: %s", e)
-
-        # 4. 计数优质反馈
-        if rating >= HIGH_QUALITY_RATING_THRESHOLD:
-            self._feedbacks_since_optimization += 1
-
-        return {
-            "feedback_id": feedback_id,
-            "rating": rating,
-            "weight_delta": weight_delta,
-            "memories_stored": len(locals().get("memory_ids", [])),
-            "message": "反馈已记录，系统将根据反馈持续优化" if rating >= HIGH_QUALITY_RATING_THRESHOLD else "反馈已记录",
-        }
-
-    def get_optimized_prompt(self, task_type: str) -> str:
-        """获取当前最优的 Prompt 模板。
-
-        Args:
-            task_type: 任务类型 (analysis / retrieval / report)
-
-        Returns:
-            优化后的 prompt 内容；若无则返回空字符串
-        """
-        try:
-            template = self.prompt_optimizer.get_template(task_type)
-            if template:
-                return template["content"]
-        except Exception as e:
-            logger.debug("Prompt retrieval failed: %s", e)
-        return ""
-
-    # ═══════════════════════════ 对话接口 ═══════════════════════════
-
-    async def chat(self, user_input: str) -> ModelResponse:
-        """处理用户对话，整合记忆上下文。"""
-        llm = await self._get_llm()
-        self.messages.append(Message(role="user", content=user_input))
-        memory_context = await self._recall_memories(user_input)
-        rag_context = await self._retrieve_context(user_input)
-        context_parts = []
-        if memory_context:
-            context_parts.append(f"[记忆]\n{memory_context}")
-        if rag_context:
-            context_parts.append(f"[知识]\n{rag_context}")
-        if context_parts:
-            combined = "\n\n".join(context_parts)
-            self.messages.append(Message(role="system", content=combined))
-        response = await llm.chat(self.messages)
-        self.messages.append(response)
-        extraction_llm = await self._get_extraction_llm()
-        if extraction_llm:
-            await self._extract_and_store_memories(user_input, response.content)
-        return response
-
-    async def stream_chat(self, user_input: str) -> AsyncIterator[str]:
-        """流式对话，逐 token 产出。"""
-        llm = await self._get_llm()
-        self.messages.append(Message(role="user", content=user_input))
-        memory_context = await self._recall_memories(user_input)
-        rag_context = await self._retrieve_context(user_input)
-        context_parts = []
-        if memory_context:
-            context_parts.append(f"[记忆]\n{memory_context}")
-        if rag_context:
-            context_parts.append(f"[知识]\n{rag_context}")
-        if context_parts:
-            combined = "\n\n".join(context_parts)
-            self.messages.append(Message(role="system", content=combined))
-        full_content = ""
-        async for chunk in llm.stream_chat(self.messages):
-            full_content += chunk
-            yield chunk
-        self.messages.append(Message(role="assistant", content=full_content))
-        extraction_llm = await self._get_extraction_llm()
-        if extraction_llm:
-            await self._extract_and_store_memories(user_input, full_content)
-
-    # ═══════════════════════════ NL2Query 接口 ═══════════════════════════
-
-    async def nl2query_code(self, query: str, data_type: str = "gnss", data_description: str = "") -> dict:
-        from backend.analysis.codegen import generate_code
-        return await generate_code(query, data_type, data_description, model_id=self.model_id)
-
-    async def nl2query_execute(self, query: str, data_type: str = "gnss", data_description: str = "", use_cache: bool = True) -> dict:
-        from backend.core.sandbox import CodeSandbox
-        from backend.analysis.cache import QueryCache
-        if use_cache:
-            cache = QueryCache()
-            cached = cache.get(query, data_type)
-            if cached is not None:
-                logger.info("NL2Query cache hit: %s...", query[:50])
-                return {"success": True, "from_cache": True, "code": cached.get("code", ""), "result": cached.get("result", {})}
-        gen_result = await self.nl2query_code(query, data_type, data_description)
-        if not gen_result["success"]:
-            return gen_result
-        code = gen_result["code"]
-        sandbox = CodeSandbox(timeout=30)
-        try:
-            exec_result = sandbox.execute_python(code)
-            output = exec_result.to_dict()
-            if use_cache and exec_result.success:
-                cache = QueryCache()
-                cache.set(query, data_type, code, output)
-            return {"success": exec_result.success, "from_cache": False, "code": code, "result": output}
-        finally:
-            sandbox.clean()
-
-    # ═══════════════════════════ RAG 检索 ═══════════════════════════
-
-    async def _retrieve_context(self, query: str) -> str:
-        try:
-            from backend.retrieval.vector_store import get_vector_store
-            store = get_vector_store()
-            results = await store.search(query, top_k=3)
-            if results:
-                return "\n---\n".join(r["content"] for r in results)
-        except Exception:
-            pass
-        return ""
-
-    # ═══════════════════════════ 工具方法 ═══════════════════════════
-
-    def get_message_history(self) -> list[Message]:
-        return self.messages
-
-    def clear_history(self) -> None:
-        self.messages.clear()
-
-    def list_memories(self, memory_type: Optional[str] = None, top_k: int = 20) -> list[dict]:
-        return self.memory.get(user_id=self.user_id, memory_type=memory_type, top_k=top_k)
-
-    def search_memories(self, query: str, top_k: int = 5) -> list[dict]:
-        return self.memory.search(user_id=self.user_id, query=query, top_k=top_k)
-
-    def delete_memory(self, memory_id: int) -> None:
-        self.memory.delete(memory_id)
-
-    def toggle_memory(self, enabled: Optional[bool] = None) -> bool:
-        if enabled is not None:
-            self._memory_enabled = enabled
-        else:
-            self._memory_enabled = not self._memory_enabled
-        return self._memory_enabled
-
-    def toggle_react(self, enabled = None) -> bool:
-        if enabled is not None:
-            self._react_enabled = enabled
-        else:
-            self._react_enabled = not self._react_enabled
-        return self._react_enabled
-
-    def get_strategies(self, task_type: str = "analysis", top_k: int = 10) -> list[dict]:
-        return self.strategy.get_top(task_type, top_k=top_k)
-
-    # ═══════════════════════════ 优化状态 ═══════════════════════════
-
-    def get_optimization_stats(self) -> dict:
-        """获取自成长模块的统计信息。"""
-        try:
-            memory_stats = self.memory.get_stats(self.user_id)
-        except Exception:
-            memory_stats = {"total": 0, "by_type": {}}
-        try:
-            feedback_stats = self.feedback_collector.get_stats()
-        except Exception:
-            feedback_stats = {}
-        try:
-            finetune_models = self.fine_tuner.list_models()
-        except Exception:
-            finetune_models = []
-        try:
-            prompt_versions = {}
-            for task_type in ["analysis", "retrieval", "report"]:
-                tpl = self.prompt_optimizer.get_template(task_type)
-                if tpl:
-                    prompt_versions[task_type] = {"version": tpl.get("version", 0), "score": tpl.get("score", 0)}
-        except Exception:
-            prompt_versions = {}
-
-        return {
-            "user_id": self.user_id,
-            "memory": memory_stats,
-            "feedback": feedback_stats,
-            "finetune": {
-                "models": len(finetune_models),
-                "active_model": next((m for m in finetune_models if m.get("is_active")), None),
-            },
-            "prompt": prompt_versions,
-            "optimization_enabled": self._optimization_enabled,
-            "feedbacks_since_optimization": self._feedbacks_since_optimization,
-        "progressive_learning": {
-            "learning_mode": self._learning_mode,
-            "task_types": list(self._progressive.task_history.keys()),
-        },
-        }
-
-    def record_tool_execution(self, tool_name: str, duration_ms: float, success: bool = True) -> None:
-        """Track tool execution for progressive learning."""
-        self._progressive.record_task(tool_name, duration_ms, success)
-
-    def set_learning_mode(self, enabled: bool) -> None:
-        """Enable or disable experimental learning mode."""
-        self._learning_mode = enabled
-        self._progressive.learning_enabled = enabled
-        logger.info("Learning mode %s", "enabled" if enabled else "disabled")
-
-    def get_progressive_stats(self) -> dict:
-        """Get progressive learning statistics."""
-        task_types = list(self._progressive.task_history.keys())
-        return {
-            "learning_mode": self._learning_mode,
-            "tracked_tasks": len(task_types),
-            "task_types": task_types,
-            "stats": {t: self._progressive.get_task_stats(t) for t in task_types},
-        }
-
-    def toggle_optimization(self, enabled: Optional[bool] = None) -> bool:
-        """启用/禁用后台优化任务。"""
-        if enabled is not None:
-            self._optimization_enabled = enabled
-        else:
-            self._optimization_enabled = not self._optimization_enabled
-
-        if self._optimization_enabled:
-            self._start_optimization_thread()
-        return self._optimization_enabled
-
-

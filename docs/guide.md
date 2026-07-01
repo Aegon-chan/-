@@ -1,4 +1,38 @@
 # Research Agent User Guide
+ 
+ ## Windows Desktop App (PyInstaller Build)
+ 
+ ### Build
+ 
+ ```powershell
+ .venv\Scripts\Activate.ps1
+ python scripts\build_exe.ps1
+ ```
+ 
+ The built executable and supporting files will be in `dist\ResearchAgent\`.
+ 
+ ### Run
+ 
+ 1. Double-click `ResearchAgent.exe`
+ 2. Open http://localhost:8080 in your browser
+ 3. Go to **Settings** page and enter your API Key(s)
+ 4. Click **Save** then **Test Connection** to verify
+ 5. Return to **Chat** page and start using
+ 
+ > **Note**: The exe runs as a single process. No separate FastAPI backend is required.
+ > API Keys are saved to `data/user_config.json` and persist across restarts.
+ 
+ ### First Run
+ 
+ On first launch, if no API keys are configured, the app will guide you to the Settings page.
+ Configure at least one key (DeepSeek recommended) to start using the AI features.
+ 
+ ### Logs
+ 
+ All logs are stored in `data/logs/`:
+ - `chat_YYYYMMDD.log` -- Conversation logs
+ - `usage.log` -- Feature usage tracking
+ - `error.log` -- Error logs
 
 ## Overview
 

@@ -1,4 +1,4 @@
-﻿"""
+"""
 NiceGUI 前端应用入口
 
 直接调用后端 Python 模块，实现：
@@ -14,24 +14,111 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import os
 import json
 import logging
 import uuid
 from datetime import datetime
 from typing import Optional
+from pathlib import Path
 
-from nicegui import ui
+import requests
+
+from nicegui import app as nicegui_app, ui
 
 from backend.config import settings
 
 logger = logging.getLogger("research_agent.frontend")
 
+# ── Layout CSS injected once ──
+_LAYOUT_CSS = """
+<style>
+.full-height-container { display: flex; flex-direction: column; height: calc(100vh - 64px); }
+.chat-messages-area { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+.chat-input-bar { flex: 0 0 auto; }
+.chat-messages-area::-webkit-scrollbar { width: 6px; }
+.chat-messages-area::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+.chat-messages-area::-webkit-scrollbar-thumb:hover { background: #aaa; }
+@media (max-width: 600px) { .q-drawer { width: 260px !important; } }
+</style>
+"""
+
+_injected_css = False
+
+def _ensure_layout_css():
+    global _injected_css
+    if not _injected_css:
+        ui.add_head_html(_LAYOUT_CSS)
+        _injected_css = True
+
+
 # ───────────────────────────── 全局状态 ─────────────────────────────
+
+
+# -- Local persistent store (survives page reload without backend) --
+_LOCAL_STORE_PATH = os.path.join("data", "local_sessions.json")
+
+def _load_local_store() -> dict:
+    try:
+        if os.path.exists(_LOCAL_STORE_PATH):
+            with open(_LOCAL_STORE_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        logger.warning("Failed to load local store: %s", e)
+    return {"sessions": {}, "messages": {}}
+
+def _save_local_store(data: dict) -> None:
+    try:
+        os.makedirs(os.path.dirname(_LOCAL_STORE_PATH) or ".", exist_ok=True)
+        with open(_LOCAL_STORE_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.warning("Failed to save local store: %s", e)
+
+def _load_local_messages(session_id: str) -> list:
+    store = _load_local_store()
+    return store.get("messages", {}).get(session_id, [])
+
+def _save_messages_locally(session_id: str, messages: list) -> None:
+    store = _load_local_store()
+    existing = store["messages"].get(session_id, [])
+    existing.extend(messages)
+    store["messages"][session_id] = existing
+    _save_local_store(store)
+
+def _save_sessions_locally(sessions_list: list) -> None:
+    offline = [s for s in sessions_list if s.get("offline")]
+    if not offline:
+        return
+    store = _load_local_store()
+    existing_ids = set(store.get("sessions", {}).keys())
+    for s in offline:
+        sid = s.get("id")
+        if sid and sid not in existing_ids:
+            store["sessions"][sid] = s
+    _save_local_store(store)
+
+def _load_local_sessions() -> list:
+    store = _load_local_store()
+    return list(store.get("sessions", {}).values())
+
+def _remove_local_session(sid: str) -> None:
+    store = _load_local_store()
+    store["sessions"].pop(sid, None)
+    store["messages"].pop(sid, None)
+    _save_local_store(store)
 
 _session_id: str = ""
 _user_id: str = "default"
 _current_model: str = "deepseek-chat"
 _nl2query_history: list[dict] = []
+# Session management globals
+_sessions: list[dict] = []
+_current_session_id: str = ""
+_agents: dict = {}
+_pending_attachments: list[dict] = []
+_BACKEND_URL = "http://localhost:8000"
+_session_refreshing: bool = False
 
 
 def _ensure_session() -> str:
@@ -41,9 +128,30 @@ def _ensure_session() -> str:
     return _session_id
 
 
-def _get_agent() -> "ResearchAgent":
+def _get_agent():
+    """Get or create the ResearchAgent for the current session, with history.
+
+    Reuses the agent if it already exists in _agents (same session, same model),
+    loads historical messages from the backend API for a new agent.
+    """
+    sid = _ensure_session()
+    # Reuse existing agent if model hasn't changed
+    if sid in _agents and _agents[sid].model_id == _current_model:
+        return _agents[sid]
+    # Create new agent
     from backend.core.agent import ResearchAgent
-    return ResearchAgent(session_id=_ensure_session(), model_id=_current_model, user_id=_user_id)
+    agent = ResearchAgent(session_id=sid, model_id=_current_model, user_id=_user_id)
+    # Load history from backend
+    try:
+        resp = requests.get(f"{_BACKEND_URL}/api/v1/sessions/{sid}", timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            history = data.get("messages", [])
+            agent.load_history(history)
+    except Exception as e:
+        logger.warning("Failed to load session history: %s", e)
+    _agents[sid] = agent
+    return agent
 
 
 def _list_available_models() -> list[str]:
@@ -51,6 +159,284 @@ def _list_available_models() -> list[str]:
     models = ModelRegistry.list_models()
     llms = [m["model_id"] for m in models if m["type"] == "llm"]
     return llms if llms else ["（无可用模型）"]
+
+# ---- Session management ----
+
+def _refresh_sessions():
+    """Fetch session list from backend API, merged with local offline sessions."""
+    global _sessions, _session_refreshing
+    if _session_refreshing:
+        return
+    _session_refreshing = True
+    try:
+        resp = requests.get(f"{_BACKEND_URL}/api/v1/sessions/", timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            _sessions = data.get("sessions", [])
+    except Exception as e:
+        logger.warning("Failed to fetch sessions: %s", e)
+    finally:
+        # Merge in local sessions that the backend doesnt know about
+        local_sessions = _load_local_sessions()
+        existing_ids = {s.get("id") for s in _sessions}
+        for ls in local_sessions:
+            sid = ls.get("id")
+            if sid and sid not in existing_ids:
+                _sessions.append(ls)
+        _session_refreshing = False
+
+
+def _create_session() -> bool:
+    """Create a new session via API (with local fallback) and switch to it."""
+    global _session_id, _current_session_id, _sessions
+    try:
+        resp = requests.post(
+            f"{_BACKEND_URL}/api/v1/sessions/",
+            json={"user_id": _user_id, "title": "新对话", "model_id": _current_model},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            _session_id = data["id"]
+            _current_session_id = data["id"]
+            from backend.core.agent import ResearchAgent
+            _agents[_session_id] = ResearchAgent(
+                session_id=_session_id, model_id=_current_model, user_id=_user_id
+            )
+            _refresh_sessions()
+            return True
+    except Exception as e:
+        logger.warning("Failed to create session via API: %s", e)
+
+    # Local fallback: create offline session and persist it
+    local_id = str(uuid.uuid4())
+    _session_id = local_id
+    _current_session_id = local_id
+    from backend.core.agent import ResearchAgent
+    _agents[local_id] = ResearchAgent(
+        session_id=local_id, model_id=_current_model, user_id=_user_id
+    )
+    now_ts = datetime.now().isoformat()
+    session_entry = {"id": local_id, "title": "新对话", "message_count": 0,
+                     "model_id": _current_model, "offline": True,
+                     "created_at": now_ts, "updated_at": now_ts}
+    _sessions.insert(0, session_entry)
+    _save_sessions_locally(_sessions)
+    return True
+
+
+_pending_chat_session: str = ""
+
+
+def _load_and_display_messages(chat_area, loading_label=None):
+    """Load messages for current session (backend first, then local fallback)."""
+    if not _current_session_id:
+        return
+    msgs = []
+    loaded_from = "local"
+    # Try backend first
+    try:
+        resp = requests.get(f"{_BACKEND_URL}/api/v1/sessions/{_current_session_id}", timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            msgs = data.get("messages", [])
+            loaded_from = "backend"
+    except Exception as e:
+        logger.warning("Failed to load messages from backend: %s", e)
+    # Fall back to local store if backend failed or returned empty
+    if not msgs:
+        msgs = _load_local_messages(_current_session_id)
+        if msgs:
+            loaded_from = "local"
+    # Render messages
+    for msg in msgs:
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        metadata = msg.get("metadata", {}) or {}
+        if role == "user":
+            with chat_area:
+                with ui.chat_message("", name="你", sent=True):
+                    attachments = metadata.get("attachments", [])
+                    for att in attachments:
+                        if att.get("mime_type", "").startswith("image/"):
+                            img_url = f"{_BACKEND_URL}{att['url']}" if att.get("url", "").startswith("/") else att["url"]
+                            ui.image(img_url).classes("max-w-xs rounded mb-1")
+                        else:
+                            file_url = f"{_BACKEND_URL}{att['url']}" if att.get("url", "").startswith("/") else att["url"]
+                            ui.link(att["filename"], file_url).classes("text-sm block mb-1")
+                    ui.markdown(content)
+        elif role == "assistant":
+            with chat_area:
+                ui.chat_message(content, name="助手", sent=False)
+    logger.info("Loaded %d messages from %s for session %s", len(msgs), loaded_from, _current_session_id)
+    if loading_label is not None:
+        try:
+            loading_label.set_text("")
+            loading_label.classes(add="hidden")
+        except Exception:
+            pass
+
+
+def _navigate_to_session(sid):
+    """Switch session and navigate to chat page"""
+    _switch_session(sid)
+    ui.navigate.to("/")
+
+
+def _switch_session(sid):
+    """Switch to an existing session, preloading agent with stored history."""
+    global _session_id, _current_session_id
+    if sid == _current_session_id:
+        return
+    _session_id = sid
+    _current_session_id = sid
+    if sid not in _agents:
+        from backend.core.agent import ResearchAgent
+        agent = ResearchAgent(
+            session_id=sid, model_id=_current_model, user_id=_user_id
+        )
+        # Preload local messages into agent history
+        local_msgs = _load_local_messages(sid)
+        if local_msgs:
+            agent.load_history(local_msgs)
+        _agents[sid] = agent
+    _refresh_sessions()
+
+
+def _delete_session(sid):
+    """Delete a session (via API or local fallback) and persist the change."""
+    global _session_id, _current_session_id, _sessions
+    try:
+        resp = requests.delete(f"{_BACKEND_URL}/api/v1/sessions/{sid}", timeout=10)
+        if resp.status_code == 200:
+            _agents.pop(sid, None)
+            if _current_session_id == sid:
+                _session_id = ""
+                _current_session_id = ""
+            _refresh_sessions()
+            return True
+    except Exception as e:
+        logger.warning("Failed to delete session: %s", e)
+    # Local delete
+    _agents.pop(sid, None)
+    _sessions = [s for s in _sessions if s.get("id") != sid]
+    if _current_session_id == sid:
+        _session_id = ""
+        _current_session_id = ""
+    # Also remove from local persistent store
+    _remove_local_session(sid)
+    return True
+
+
+def _persist_messages(session_id, messages):
+    """Save messages locally first, then try backend API as sync."""
+    if not session_id or not messages:
+        return
+    # Always save locally first (ensures messages survive page reload)
+    _save_messages_locally(session_id, messages)
+    # Update message count in local store
+    store = _load_local_store()
+    for s in store.get("sessions", {}).values():
+        if s.get("id") == session_id:
+            s["message_count"] = s.get("message_count", 0) + len(messages)
+            s["updated_at"] = datetime.now().isoformat()
+            break
+    _save_local_store(store)
+    # Also update in-memory session entry
+    for s in _sessions:
+        if s.get("id") == session_id:
+            s["message_count"] = s.get("message_count", 0) + len(messages)
+            break
+    # Try backend sync (best effort)
+    try:
+        requests.post(
+            f"{_BACKEND_URL}/api/v1/sessions/{session_id}/messages",
+            json={"messages": messages},
+            timeout=10,
+        )
+    except Exception as e:
+        logger.warning("Failed to sync messages to backend: %s", e)
+
+
+# ---- Chat logging ----
+
+def _log_chat(user_input, response, model, duration_ms):
+    log_dir = os.path.join("data", "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "chat_" + datetime.now().strftime("%Y%m%d") + ".log")
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write("[" + datetime.now().isoformat() + "] model=" + model + "\n")
+        f.write("  Q: " + str(user_input)[:200] + "\n")
+        f.write("  A: " + str(response)[:500] + "\n")
+        f.write("  duration: %.0fms\n\n" % duration_ms)
+
+def _log_usage(event_type, detail=""):
+    log_dir = os.path.join("data", "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "usage.log")
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write("[" + datetime.now().isoformat() + "] " + str(event_type) + " | " + str(detail) + "\n")
+
+# ---- User config persistence ----
+_USER_CONFIG_PATH = os.path.join("data", "user_config.json")
+
+def _load_user_config():
+    import json
+    try:
+        if os.path.exists(_USER_CONFIG_PATH):
+            with open(_USER_CONFIG_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def _save_user_config(config):
+    import json
+    os.makedirs(os.path.dirname(_USER_CONFIG_PATH), exist_ok=True)
+    with open(_USER_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2, ensure_ascii=False)
+
+def _apply_user_config():
+    config = _load_user_config()
+    keys_map = {
+        "deepseek_key": "DEEPSEEK_API_KEY",
+        "kimi_key": "KIMI_API_KEY",
+        "openai_key": "OPENAI_API_KEY",
+    }
+    changed = False
+    for cfg_key, env_key in keys_map.items():
+        val = config.get(cfg_key, "")
+        if val and val != os.environ.get(env_key, ""):
+            os.environ[env_key] = val
+            changed = True
+    if changed:
+        from backend.config import settings
+        settings.deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+        settings.kimi_api_key = os.environ.get("KIMI_API_KEY", "")
+        settings.openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+
+def _check_api_keys():
+    from backend.models.registry import ModelRegistry
+    models = ModelRegistry.list_models()
+    configured = []
+    for m in models:
+        if m["type"] == "llm" and m.get("status", "active") == "active":
+            configured.append(m["model_id"])
+    if not configured:
+        from backend.config import settings
+        if settings.deepseek_api_key and "your-" not in settings.deepseek_api_key:
+            configured.append("deepseek-chat")
+        if settings.kimi_api_key and "your-" not in settings.kimi_api_key:
+            configured.append("moonshot-v1")
+        if settings.openai_api_key and "your-" not in settings.openai_api_key:
+            configured.append("gpt-4o")
+    return configured
+
+# Apply user config on startup (overrides .env)
+_apply_user_config()
+from backend.models import init_models
+init_models()
+
 
 
 # ═══════════════════════════ 反馈助手 ═══════════════════════════
@@ -87,37 +473,73 @@ def _submit_feedback(rating, label, up_btn, down_btn, status_label):
 
 
 def _drawer():
-    with ui.left_drawer().classes("bg-gray-100 dark:bg-gray-800"):
-        ui.label("导航").classes("text-lg font-bold p-4")
-        with ui.column().classes("p-2 gap-2"):
-            ui.button("对话", on_click=lambda: ui.navigate.to("/")
-                     ).props("flat icon=chat")
-            ui.button("NL2Query", on_click=lambda: ui.navigate.to("/nl2query")
-                     ).props("flat icon=code")
-            ui.button("图表配置", on_click=lambda: ui.navigate.to("/chart-studio")
-                     ).props("flat icon=bar_chart")
-            ui.button("知识库", on_click=lambda: ui.navigate.to("/knowledge")
-                     ).props("flat icon=library_books")
-            ui.button("记忆", on_click=lambda: ui.navigate.to("/memories")
-                     ).props("flat icon=psychology")
-            ui.button("设置", on_click=lambda: ui.navigate.to("/settings")
-                     ).props("flat icon=settings")
+    with ui.left_drawer(fixed=True).classes("bg-gray-100 dark:bg-gray-800"):
+        with ui.column().classes("w-full h-full justify-between"):
+            # Top: sessions (scrollable)
+            with ui.column().classes("w-full overflow-y-auto flex-1"):
+                ui.label("Sessions").classes("text-lg font-bold px-3 pt-3 pb-1")
+                ui.button("New", icon="add",
+                    on_click=lambda: _create_session() if not _session_refreshing else None
+                ).props("flat color=primary").classes("w-[calc(100%-16px)] mx-2 mb-1")
+                _render_session_list()
+            # Bottom: navigation
+            ui.separator()
+            with ui.column().classes("w-full px-2 pb-2 gap-0"):
+                ui.label("Navigate").classes("text-lg font-bold px-2 pt-1 pb-1")
+                nav_items = [
+                    ("Chat", "/", "chat"),
+                    ("NL2Query", "/nl2query", "code"),
+                    ("Charts", "/chart-studio", "bar_chart"),
+                    ("Knowledge", "/knowledge", "library_books"),
+                    ("Memory", "/memories", "psychology"),
+                    ("Settings", "/settings", "settings"),
+                ]
+                for label, path, icon in nav_items:
+                    ui.button(label, icon=icon, on_click=lambda p=path: ui.navigate.to(p)
+                             ).props("flat").classes("w-full justify-start")
+
+@ui.refreshable
+def _render_session_list():
+    if not _sessions:
+        ui.label("（暂无对话）").classes("text-gray-400 text-sm px-2")
+        return
+    for s in _sessions:
+        sid = s.get("id", "")
+        title = s.get("title", "对话")
+        msg_count = s.get("message_count", 0)
+        is_active = sid == _current_session_id
+        css = "bg-blue-100 dark:bg-blue-900 rounded" if is_active else ""
+        with ui.row().classes(f"items-center w-full px-2 py-1 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 {css}").on("click", lambda sid=sid: _navigate_to_session(sid)):
+            ui.icon("chat").props("size=16px").classes("text-gray-500 shrink-0")
+            ui.label(title[:20]).classes("text-sm truncate flex-1")
+            if msg_count > 0:
+                ui.label(str(msg_count)).classes("text-xs text-gray-400 shrink-0")
+            ui.button(icon="delete",
+                      on_click=lambda e, sid=sid: (_delete_session(sid), _render_session_list.refresh())
+                      ).props("flat dense round size=sm color=grey").classes("opacity-60 hover:opacity-100 shrink-0")
 
 
 def _header(title="Research Agent"):
     available = _list_available_models()
     with ui.header(elevated=True).classes("items-center justify-between"):
-        ui.label(title).classes("text-lg font-bold")
+        with ui.row().classes("items-center gap-2"):
+            ui.button(icon="menu", on_click=lambda: nicegui_app.toggle_left_drawer()
+                     ).props("flat dense round").classes("lg:hidden")
+            ui.label(title).classes("text-lg font-bold")
         ui.select(
-            label="模型",
+            label="Model",
             options={m: m for m in available},
             value=_current_model if _current_model in available else available[0],
             on_change=lambda e: setattr(globals(), "_current_model", e.value),
         ).classes("w-52").props("outlined dense")
 
-
 def _scroll_bottom() -> None:
-    ui.run_javascript("setTimeout(() => window.scrollTo(0,document.body.scrollHeight), 50)")
+    ui.run_javascript("""
+        var el = document.querySelector(".chat-messages-area");
+        if (el) { el.scrollTop = el.scrollHeight; }
+        else { window.scrollTo(0, document.body.scrollHeight); }
+    """)
+
 
 
 # ═══════════════════════════ 对话页面 ═══════════════════════════
@@ -125,22 +547,86 @@ def _scroll_bottom() -> None:
 
 @ui.page("/")
 def chat_page():
+    """Chat page with file upload and session support"""
+    _ensure_layout_css()
     _drawer()
     _header()
 
-    has_model = _list_available_models() != ["（无可用模型）"]
-    chat_area = ui.column().classes(
-        "w-full max-w-4xl mx-auto p-4 gap-3 flex-1 overflow-y-auto"
-    )
+    has_model = _list_available_models() != ["No model available"]
 
-    with ui.row().classes(
-        "w-full items-center gap-2 sticky bottom-0 "
-        "bg-white dark:bg-gray-900 p-3 border-t"
-    ):
-        input_field = ui.input(
-            placeholder="输入你的问题，按 Enter 发送..."
-        ).classes("flex-1").props("clearable autofocus")
-        send_btn = ui.button("发送", icon="send").props("flat")
+    with ui.column().classes("full-height-container w-full"):
+        with ui.column().classes("chat-messages-area w-full px-4"):
+            chat_area = ui.column().classes("w-full max-w-4xl mx-auto gap-3 py-2")
+
+            if not has_model:
+                with chat_area:
+                    ui.markdown(
+                        "## Welcome to Research Agent\n\n"
+                        "Configure API Key in `.env` and restart."
+                    )
+            else:
+                with chat_area:
+                    ui.markdown(
+                        "## Welcome to Research Agent\n\n"
+                        "I am your research data analysis assistant, supporting:"
+                        "\n\n- **Chat**: Natural language Q&A\n"
+                        "- **NL2Query**: Natural language to Python code\n"
+                        "- **Charts**: Custom chart styling\n"
+                        "- **Knowledge**: Document upload & retrieval\n\n"
+                        "Type your question below or explore features via the sidebar."
+                    )
+            # Feedback row (hidden, placed in chat_area)
+            fb_row = ui.row().classes("items-center gap-1 ml-12 hidden")
+            fb_status = ui.label("").classes("text-xs text-gray-400")
+            fb_up = ui.button(icon="thumb_up", on_click=lambda: _submit_feedback(1, "up", fb_up, fb_down, fb_status)
+                ).props("flat dense round size=sm color=green")
+            fb_down = ui.button(icon="thumb_down", on_click=lambda: _submit_feedback(-1, "down", fb_up, fb_down, fb_status)
+                ).props("flat dense round size=sm color=red")
+
+        with ui.column().classes("chat-input-bar w-full bg-white dark:bg-gray-900 px-3 py-2"):
+            preview_container = ui.row().classes("w-full gap-2 flex-wrap hidden")
+
+            with ui.row().classes("w-full items-center gap-2 max-w-4xl mx-auto"):
+
+                def _on_upload(e):
+                    file_content = e.content.read()
+                    file_name = e.name or "file"
+                    try:
+                        resp = requests.post(
+                            f"{_BACKEND_URL}/api/v1/upload/upload",
+                            files={"file": (file_name, file_content)},
+                            timeout=30,
+                        )
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            _pending_attachments.append(data)
+                            with preview_container:
+                                with ui.row().classes("items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded px-2 py-1"):
+                                    if data.get("mime_type", "").startswith("image/"):
+                                        img_url = data["url"]
+                                        ui.image(img_url).classes("w-8 h-8 rounded object-cover")
+                                    else:
+                                        ui.icon("description").props("size=20px").classes("text-gray-500")
+                                    ui.label(file_name[:15]).classes("text-xs truncate max-w-24")
+                                    ui.button(icon="close", on_click=lambda d=data: (
+                                        _pending_attachments.remove(d) if d in _pending_attachments else None,
+                                        preview_container.clear(),
+                                        preview_container.classes(add="hidden"),
+                                    )).props("flat dense round size=xs").classes("text-gray-400")
+                            preview_container.classes(remove="hidden")
+                            ui.notify(f"Uploaded: {file_name}", type="positive")
+                    except Exception as ex:
+                        ui.notify(f"Upload failed: {ex}", type="negative")
+
+                ui.upload(label="", on_upload=_on_upload, multiple=False
+                    ).props("flat dense round icon=attach_file").classes("shrink-0")
+
+                input_field = ui.input(
+                    placeholder="Type your question, press Enter to send..."
+                ).classes("flex-1").props("clearable autofocus")
+                send_btn = ui.button("Send", icon="send").props("flat")
+
+
 
         async def do_send():
             text = input_field.value
@@ -150,77 +636,86 @@ def chat_page():
             send_btn.disable()
             input_field.disable()
 
-            with chat_area:
-                ui.chat_message(text, name="你", sent=True)
-            _scroll_bottom()
+            attachments = list(_pending_attachments)
+            _pending_attachments.clear()
+            preview_container.clear()
+            preview_container.classes(add="hidden")
+
+            metadata = {"attachments": attachments} if attachments else {}
 
             with chat_area:
-                bubble = ui.chat_message("", name="助手", sent=False)
-            _scroll_bottom()
+                with ui.chat_message("", name="You", sent=True):
+                    if attachments:
+                        for att in attachments:
+                            if att.get("mime_type", "").startswith("image/"):
+                                img_url = att["url"]
+                                ui.image(img_url).classes("max-w-xs rounded mb-1")
+                            else:
+                                file_url = att["url"]
+                                ui.link(att["filename"], file_url).classes("text-sm block mb-1")
+                    ui.markdown(text)
 
+            with chat_area:
+                bubble = ui.chat_message("", name="Assistant", sent=False)
+
+            full = ""
             try:
                 agent = _get_agent()
-                full = ""
                 async for token in agent.stream_chat(text):
                     full += token
                     bubble.clear()
                     with bubble:
                         ui.markdown(full)
-                    _scroll_bottom()
             except ValueError as e:
                 bubble.clear()
                 with bubble:
-                    ui.markdown(f"**配置错误:** {e}")
+                    ui.markdown(f"Config Error: {e}")
             except Exception as e:
                 bubble.clear()
                 with bubble:
-                    ui.markdown(f"**出错了:** {e}")
-                    logger.exception("对话异常")
+                    ui.markdown(f"Error: {e}")
+                    logger.exception("Chat error")
             finally:
-                # 显示反馈按钮
+                msgs = []
+                user_content = text
+                if text:
+                    msgs.append({"role": "user", "content": user_content, "metadata": metadata})
+                if full:
+                    msgs.append({"role": "assistant", "content": full})
+                if msgs and _current_session_id:
+                    _persist_messages(_current_session_id, msgs)
                 try:
                     fb_row.classes(remove="hidden")
                 except Exception:
                     pass
                 input_field.enable()
                 send_btn.enable()
-
-        # 反馈: 在当前助手消息下方添加 thumbs up/down
-        with chat_area:
-            fb_row = ui.row().classes("items-center gap-1 ml-12 hidden")
-            fb_row.id = f"fb_row_{id(chat_area)}"
-            fb_status = ui.label("").classes("text-xs text-gray-400")
-        with fb_row:
-            fb_up = ui.button(icon="thumb_up", on_click=lambda: _submit_feedback(1, "赞", fb_up, fb_down, fb_status)).props("flat dense round size=sm color=green")
-            fb_down = ui.button(icon="thumb_down", on_click=lambda: _submit_feedback(-1, "踩", fb_up, fb_down, fb_status)).props("flat dense round size=sm color=red")
-            ui.label("").classes("text-xs text-gray-400").bind_text_from(fb_status, "text")
+                _scroll_bottom()
 
         send_btn.on_click(do_send)
         input_field.on("keydown.enter", do_send)
 
-    with chat_area:
-        if not has_model:
-            ui.markdown(
-                "## 欢迎使用 Research Agent\n\n"
-                "请在 `.env` 文件中配置 API Key 后重启服务。"
-            )
-        else:
-            ui.markdown(
-                "## 欢迎使用 Research Agent\n\n"
-                "我是你的科研数据分析助手，支持：\n\n"
-                "- **对话分析**: 自然语言问答\n"
-                "- **NL2Query**: 自然语言转 Python 代码并执行\n"
-                "- **图表配置**: 自定义图表样式\n"
-                "- **知识库**: 文档上传与检索\n\n"
-                "在下方输入问题开始对话，或通过左侧导航体验更多功能。"
-            )
+    # Initialize session (outside any with block to avoid parent-slot issues)
+    def _init_session_sync():
+        """Initialize session: load local sessions, create if needed, load messages."""
+        if not _current_session_id:
+            _refresh_sessions()
+            if _sessions:
+                _switch_session(_sessions[0].get("id", ""))
+            if not _current_session_id:
+                _create_session()
+            if _current_session_id:
+                _load_and_display_messages(chat_area, None)
+            try:
+                _render_session_list.refresh()
+            except Exception:
+                pass
 
-
-# ═══════════════════════════ NL2Query 页面 ═══════════════════════════
-
+    ui.timer(0.5, _init_session_sync, once=True)
 
 @ui.page("/nl2query")
 def nl2query_page():
+    _ensure_layout_css()
     _drawer()
     _header("NL2Query — 自然语言转代码")
 
@@ -368,6 +863,7 @@ def nl2query_page():
 
 @ui.page("/chart-studio")
 def chart_studio_page():
+    _ensure_layout_css()
     _drawer()
     _header("图表配置面板")
 
@@ -419,8 +915,10 @@ def chart_studio_page():
 
         # ── Figure size ──
         with ui.expansion("尺寸与导出", icon="photo_size_select_large", value=False).classes("w-full"):
-            fig_width = ui.slider(label="宽度 (英寸)", min=4, max=12, value=7, step=0.5)
-            fig_height = ui.slider(label="高度 (英寸)", min=3, max=9, value=4.2, step=0.5)
+            fig_width = ui.label("宽度 (英寸)").classes("text-sm")
+            fig_width = ui.slider(min=4, max=12, value=7, step=0.5)
+            fig_height = ui.label("高度 (英寸)").classes("text-sm")
+            fig_height = ui.slider(min=3, max=9, value=4.2, step=0.5)
             fig_dpi = ui.select(
                 label="DPI",
                 options={"150": "150 (草稿)", "200": "200 (标准)", "300": "300 (出版)"},
@@ -529,6 +1027,7 @@ def chart_studio_page():
 
 @ui.page("/knowledge")
 def knowledge_page():
+    _ensure_layout_css()
     _drawer()
     _header("知识库")
     with ui.column().classes("w-full max-w-4xl mx-auto p-4 gap-4"):
@@ -594,68 +1093,121 @@ def _do_delete(doc_id: str, refresh_cb) -> None:
         ui.notify(f"已删除: {doc_id}")
     except Exception as e:
         ui.notify(f"删除失败: {e}", type="error")
-
-
-# ═══════════════════════════ 设置页面 ═══════════════════════════
-
-
 @ui.page("/settings")
 def settings_page():
+    _ensure_layout_css()
     _drawer()
     _header("设置")
-    with ui.column().classes("w-full max-w-4xl mx-auto p-4 gap-4"):
-        ui.markdown("## 设置")
+    with ui.column().classes("w-full max-w-4xl mx-auto p-4 gap-6"):
+        # API Key 配置
+        with ui.card().classes("w-full gap-3 p-4"):
+            ui.markdown("## API Key 配置")
+            ui.label("在此输入 API Key，配置后无需重启即可生效").classes("text-sm text-gray-500")
 
-        ui.markdown("**模型状态**")
-        from backend.models.registry import ModelRegistry
-        models = ModelRegistry.list_models()
-        if models:
-            for m in models:
-                tag = "✅" if m.get("status", "active") == "active" else "❌"
-                df = " (默认)" if m.get("default") else ""
-                ui.label(f"{tag} {m['model_id']} — {m['type']}{df}")
-        else:
-            ui.label("⚠️ 未配置任何 AI 模型").classes("text-yellow-500")
+            deepseek_input = ui.input(
+                label="DeepSeek API Key",
+                value=_load_user_config().get("deepseek_key", ""),
+                password=True,
+            ).classes("w-full").props("clearable")
+            kimi_input = ui.input(
+                label="Kimi API Key",
+                value=_load_user_config().get("kimi_key", ""),
+                password=True,
+            ).classes("w-full").props("clearable")
+            openai_input = ui.input(
+                label="OpenAI API Key",
+                value=_load_user_config().get("openai_key", ""),
+                password=True,
+            ).classes("w-full").props("clearable")
 
-        ui.separator()
-        ui.markdown("**API Key 状态**")
-        for name, key in [
-            ("DeepSeek", settings.deepseek_api_key),
-            ("KIMI (Moonshot)", settings.kimi_api_key),
-            ("OpenAI", settings.openai_api_key),
-        ]:
-            if key and "your-" not in key:
-                masked = key[:8] + "..." + key[-4:] if len(key) > 12 else "已配置"
-                ui.label(f"✅ {name}: {masked}")
+            config_status = ui.label("").classes("text-sm")
+            test_status = ui.label("").classes("text-sm")
+
+            def do_save_keys():
+                cfg = {}
+                if deepseek_input.value:
+                    cfg["deepseek_key"] = deepseek_input.value.strip()
+                if kimi_input.value:
+                    cfg["kimi_key"] = kimi_input.value.strip()
+                if openai_input.value:
+                    cfg["openai_key"] = openai_input.value.strip()
+                _save_user_config(cfg)
+                _apply_user_config()
+                from backend.models import init_models
+                init_models()
+                config_status.set_text("保存成功")
+                config_status.classes("text-green-500")
+
+            def do_test_connection():
+                _apply_user_config()
+                from backend.models import init_models
+                init_models()
+                from backend.models.registry import ModelRegistry
+                llm = ModelRegistry.get_llm_with_fallback()
+                if llm is None:
+                    test_status.set_text("连接失败: 无可用模型")
+                    test_status.classes("text-red-500")
+                    return
+                import asyncio
+                async def _test():
+                    try:
+                        from backend.models.base import Message
+                        resp = await llm.chat([Message(role="user", content="ping")], max_tokens=10)
+                        test_status.set_text("连接成功: " + resp.content[:50])
+                        test_status.classes("text-green-500")
+                    except Exception as e:
+                        test_status.set_text("连接失败: " + str(e))
+                        test_status.classes("text-red-500")
+                asyncio.create_task(_test())
+
+            with ui.row().classes("gap-3"):
+                ui.button("保存配置", icon="save", on_click=do_save_keys).props("flat color=primary")
+                ui.button("测试连接", icon="wifi", on_click=do_test_connection).props("flat color=secondary")
+
+        # 模型状态
+        with ui.card().classes("w-full gap-2 p-4"):
+            ui.markdown("## 模型状态")
+            from backend.models.registry import ModelRegistry
+            models = ModelRegistry.list_models()
+            if models:
+                for m in models:
+                    tag = chr(10003) if m.get("status", "active") == "active" else chr(10007)
+                    df = " (默认)" if m.get("default") else ""
+                    ui.label(tag + " " + m["model_id"] + " - " + m["type"] + df)
             else:
-                ui.label(f"❌ {name}: 未配置").classes("text-gray-400")
+                ui.label("请在上方填写 API Key 后保存").classes("text-yellow-500")
 
-        ui.separator()
-        ui.markdown(f"**向量数据库**: {settings.chroma_persist_dir}")
-        ui.markdown(f"**Embedding 模型**: {settings.embedding_model}")
+        # 反馈概览
+        with ui.card().classes("w-full gap-2 p-4"):
+            ui.markdown("## 反馈概览")
+            fb_stats = {}
+            try:
+                agent = _get_agent()
+                fb_stats = agent.feedback_collector.get_stats()
+            except Exception:
+                pass
+            if fb_stats:
+                pos = fb_stats.get("positive_count", 0)
+                neg = fb_stats.get("negative_count", 0)
+                total = fb_stats.get("total_count", 0)
+                rate = (pos / total * 100) if total > 0 else 0
+                ui.label("好评: " + str(pos) + " | 差评: " + str(neg) + " | 好评率: " + str(int(rate)) + "%" + " | 共 " + str(total) + " 条反馈").classes("text-sm")
+            else:
+                ui.label("暂无反馈数据").classes("text-sm text-gray-400")
 
-        # Phase 2 status
-        ui.separator()
-        ui.markdown("**Phase 2 功能状态**")
-        checks = [
-            ("✅ 数据引擎", "GNSS / InSAR / 水文分析"),
-            ("✅ 交互式图表", "Plotly 时序/散点/热力/剖面图"),
-            ("✅ NL→Python 代码生成", "自然语言转分析代码"),
-            ("✅ 代码执行沙箱", "安全隔离执行"),
-            ("✅ Matplotlib 出版级图表", "静态图像导出"),
-            ("✅ 图表配置面板", "颜色/范围/标注控制"),
-            ("✅ 查询缓存", "结果复用加速"),
-            ("✅ 报告生成", "Word / HTML / PDF"),
-        ]
-        for tag, desc in checks:
-            ui.label(f"{tag} — {desc}").classes("text-sm")
-
-
-# ═══════════════════════════ 记忆浏览页面 ═══════════════════════════
-
+        # 系统信息
+        with ui.card().classes("w-full gap-2 p-4"):
+            ui.markdown("## 系统信息")
+            from backend.config import settings
+            ui.label("向量数据库: " + str(settings.chroma_persist_dir)).classes("text-sm")
+            ui.label("Embedding 模型: " + str(settings.embedding_model)).classes("text-sm")
+            ui.label("自成长: " + ("启用" if settings.feature_self_growth else "关闭")).classes("text-sm")
+            ui.label("沙箱: " + ("启用" if settings.sandbox_enabled else "关闭") + " (超时 " + str(settings.sandbox_timeout) + "s)").classes("text-sm")
+            ui.label("日志目录: data/logs/").classes("text-sm")
 
 @ui.page("/memories")
 def memories_page():
+    _ensure_layout_css()
     _drawer()
     _header("长期记忆管理")
 

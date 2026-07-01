@@ -67,3 +67,26 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1
 ## 许可
 
 MIT License
+
+
+## Windows exe 桌面版
+
+这是最简单的使用方式，无需安装 Python 环境：
+
+1. **构建 exe**：
+   powershell
+   .venv\Scripts\Activate.ps1
+   python scriptsuild_exe.ps1
+   
+   结果在 dist\ResearchAgent\ 目录下。
+
+2. **运行**：双击 dist\ResearchAgent\ResearchAgent.exe，然后打开 http://localhost:8080
+
+3. **配置 API Key**：进入设置页面 → 输入 DeepSeek/Kimi/OpenAI Key → 保存 → 测试连接
+
+4. **开始使用**：返回对话页面，输入问题
+
+> **注意**：
+> - exe 已包含完整后端模块，无需单独启动 FastAPI 服务
+> - API Key 保存在 data/user_config.json，重启后依然有效
+> - 日志文件在 data/logs/

@@ -7,6 +7,11 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+class MessageCreate(BaseModel):
+    """批量追加消息请求"""
+    messages: list[dict] = Field(default_factory=list, description="消息列表，每项含 role, content, metadata 等")
+
+
 class SessionCreate(BaseModel):
     """创建会话请求"""
     user_id: str = Field("default", description="user ID")

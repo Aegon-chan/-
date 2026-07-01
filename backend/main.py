@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.config import settings
 from backend.db.session import async_engine as engine
@@ -31,6 +32,35 @@ async def lifespan(app: FastAPI):
     # 启动：注册 AI 模型
     from backend.models import init_models
     init_models()
+
+    # Ensure default user exists
+    try:
+        from backend.db.session import sync_engine as _sync_engine
+        from sqlalchemy import text as _text
+        with _sync_engine.connect() as _conn:
+            result = _conn.execute(_text("SELECT id FROM users WHERE username = 'default'"))
+            exists = result.scalar()
+            if not exists:
+                import uuid
+                from datetime import datetime
+                _conn.execute(
+                    _text("INSERT INTO users (id, username, display_name, created_at, updated_at) "
+                           "VALUES (:id, :username, :display_name, :created_at, :updated_at)"),
+                    {
+                        "id": str(uuid.uuid4()),
+                        "username": "default",
+                        "display_name": "Default User",
+                        "created_at": datetime.utcnow(),
+                        "updated_at": datetime.utcnow(),
+                    }
+                )
+                _conn.commit()
+                logger.info("Default user created")
+            else:
+                logger.debug("Default user already exists")
+    except Exception as _ue:
+        logger.warning("Could not create default user: %s", _ue)
+
 
     logger.info("Research Agent 启动完成: env=%s", settings.app_env)
     yield
@@ -125,6 +155,13 @@ async def global_exception_handler(request: Request, exc: Exception):
 from backend.api import router as api_router
 
 app.include_router(api_router, prefix="/api/v1")
+
+# --- Static file serving for uploads ---
+import os as _os
+_uploads_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "data", "uploads")
+_os.makedirs(_uploads_dir, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=_uploads_dir), name="uploads")
+
 
 # --- 健康检查 ---
 @app.get("/health")

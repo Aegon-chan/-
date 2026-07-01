@@ -82,6 +82,12 @@ class SandboxResult:
         self.return_code = return_code
         self.execution_time_ms = execution_time_ms
 
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def get(self, key, default=None):
+        return getattr(self, key, default)
+
     def to_dict(self) -> dict:
         return {
             "success": self.success,
@@ -92,6 +98,25 @@ class SandboxResult:
             "return_code": self.return_code,
             "execution_time_ms": self.execution_time_ms,
         }
+
+
+
+def _get_python_exe() -> str:
+    """Get Python interpreter path, PyInstaller compatible."""
+    import sys, os
+    exe = sys.executable
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        base = os.path.dirname(sys.executable)
+        candidates = [
+            os.path.join(base, "_internal", "python.exe"),
+            os.path.join(base, "python.exe"),
+            os.path.join(base, "python3.exe"),
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+        logger.warning("PyInstaller env: no bundled Python found")
+    return exe
 
 
 class CodeSandbox:
@@ -159,6 +184,11 @@ class CodeSandbox:
         self.work_dir = work_dir or Path(tempfile.mkdtemp(prefix="sandbox_"))
         self.figure_output_dir = figure_output_dir or (self.work_dir / "figures")
         self.figure_output_dir.mkdir(parents=True, exist_ok=True)
+        # PyInstaller: auto-set Agg backend
+        if getattr(sys, "frozen", False):
+            os.environ.setdefault("MPLBACKEND", "Agg")
+            os.environ.setdefault("MATPLOTLIBRC", "/nonexistent")
+            logger.info("PyInstaller frozen: MPLBACKEND=Agg")
 
     def execute_python(self, code: str, input_data: str = "",
                        context: Optional[dict] = None) -> SandboxResult:
@@ -170,7 +200,7 @@ class CodeSandbox:
 
         try:
             result = subprocess.run(
-                [sys.executable, str(script_path)],
+                [_get_python_exe(), str(script_path)],
                 input=input_data,
                 capture_output=True,
                 text=True,
