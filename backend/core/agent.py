@@ -15,7 +15,9 @@ import uuid
 from datetime import datetime
 from typing import Any, AsyncIterator, Optional
 
-from backend.models.base import BaseLLM, Message, ModelResponse
+from backend.models.base import BaseLLM, ContentPart, Message, ModelResponse
+from backend.uploads import extract_text_from_file, image_to_data_uri
+from pathlib import Path
 from backend.models.registry import ModelRegistry
 from backend.core.memory import MemoryStore
 from backend.core.strategy import StrategyLibrary
@@ -104,6 +106,41 @@ OPTIMIZATION_INTERVAL_MINUTES = 30 # 后台优化任务运行间隔（分钟）
 MEMORY_DECAY_INTERVAL_HOURS = 6    # 记忆权重衰减间隔（小时）
 MEMORY_MERGE_INTERVAL_HOURS = 12   # 记忆合并间隔（小时）
 PROMPT_EVAL_INTERVAL_HOURS = 24    # Prompt 自动评估间隔（小时）
+
+
+
+# ──────────────────── 附件处理辅助函数 ────────────────────
+
+
+def _process_attachments(attachments: list[dict] | None) -> list[ContentPart]:
+    """将前端上传的附件转为 ContentPart 列表，供多模态消息使用。
+
+    图片 -> base64 data URI -> ContentPart(type="image_base64")
+    文档（PDF/DOCX/TXT/MD）-> 文本提取 -> ContentPart(type="text")
+    """
+    if not attachments:
+        return []
+    parts: list[ContentPart] = []
+    upload_root = Path("data") / "uploads"
+    for att in attachments:
+        url = att.get("url", "")
+        mime = att.get("mime_type", "")
+        fname = Path(url).name
+        file_path = upload_root / fname
+        if not file_path.exists():
+            continue
+        try:
+            if mime.startswith("image/"):
+                data_uri = image_to_data_uri(str(file_path))
+                if data_uri:
+                    parts.append(ContentPart(type="image_base64", image_base64=data_uri, mime_type=mime))
+            else:
+                text = extract_text_from_file(str(file_path), mime)
+                if text:
+                    parts.append(ContentPart(type="text", text=text))
+        except Exception:
+            continue
+    return parts
 
 
 class ResearchAgent:
@@ -454,10 +491,11 @@ class ResearchAgent:
 
     # ═══════════════════════════ 对话接口 ═══════════════════════════
 
-    async def chat(self, user_input: str) -> ModelResponse:
+    async def chat(self, user_input: str, attachments: list[dict] | None = None) -> ModelResponse:
         """处理用户对话，整合记忆上下文。"""
         llm = await self._get_llm()
-        self.messages.append(Message(role="user", content=user_input))
+        multimodal_parts = _process_attachments(attachments)
+        self.messages.append(Message(role="user", content=user_input, multimodal_parts=multimodal_parts))
         memory_context = await self._recall_memories(user_input)
         rag_context = await self._retrieve_context(user_input)
         # Record implicit feedback signals
@@ -477,10 +515,11 @@ class ResearchAgent:
             await self._extract_and_store_memories(user_input, response.content)
         return response
 
-    async def stream_chat(self, user_input: str) -> AsyncIterator[str]:
+    async def stream_chat(self, user_input: str, attachments: list[dict] | None = None) -> AsyncIterator[str]:
         """流式对话，逐 token 产出。"""
         llm = await self._get_llm()
-        self.messages.append(Message(role="user", content=user_input))
+        multimodal_parts = _process_attachments(attachments)
+        self.messages.append(Message(role="user", content=user_input, multimodal_parts=multimodal_parts))
         memory_context = await self._recall_memories(user_input)
         rag_context = await self._retrieve_context(user_input)
         context_parts = []

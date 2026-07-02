@@ -1,4 +1,4 @@
-"""
+﻿"""
 NiceGUI 前端应用入口
 
 直接调用后端 Python 模块，实现：
@@ -35,10 +35,35 @@ _LAYOUT_CSS = """
 <style>
 .full-height-container { display: flex; flex-direction: column; height: calc(100vh - 64px); }
 .chat-messages-area { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
-.chat-input-bar { flex: 0 0 auto; }
+.chat-input-bar { flex: 0 0 auto; position: relative; }
 .chat-messages-area::-webkit-scrollbar { width: 6px; }
 .chat-messages-area::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
 .chat-messages-area::-webkit-scrollbar-thumb:hover { background: #aaa; }
+/* Drag-and-drop overlay */
+.chat-input-bar.drag-over {
+    border: 2px dashed #4a9eff !important;
+    background-color: rgba(74, 158, 255, 0.06) !important;
+    border-radius: 10px !important;
+}
+.drop-indicator {
+    display: none;
+    text-align: center;
+    padding: 10px 16px;
+    color: #4a9eff;
+    font-size: 14px;
+    font-weight: 500;
+    border: 2px dashed #4a9eff;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    background-color: rgba(74, 158, 255, 0.05);
+    transition: all 0.2s ease;
+}
+.chat-input-bar.drag-over .drop-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
 @media (max-width: 600px) { .q-drawer { width: 260px !important; } }
 </style>
 """
@@ -552,6 +577,100 @@ def chat_page():
     _drawer()
     _header()
 
+
+    # Inject custom CSS for drag-and-drop visual feedback
+    ui.add_body_html('''<style>
+.chat-input-bar.drag-over {
+    border: 2px dashed #4a9eff !important;
+    background-color: rgba(74, 158, 255, 0.06) !important;
+    border-radius: 10px !important;
+}
+.drop-indicator {
+    display: none;
+    text-align: center;
+    padding: 10px 16px;
+    color: #4a9eff;
+    font-size: 14px;
+    font-weight: 500;
+    border: 2px dashed #4a9eff;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    background-color: rgba(74, 158, 255, 0.05);
+}
+.chat-input-bar.drag-over .drop-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+</style>''')
+
+    # Inject drag-and-drop JavaScript
+    ui.add_body_html('''<script>
+// Drag-and-drop file upload handler
+window.__dropResults = [];
+window._backendUrl = 'http://localhost:8000/api/v1';
+
+document.addEventListener('DOMContentLoaded', function() {
+    let dragCounter = 0;
+    const body = document.body;
+    body.addEventListener('dragenter', function(e) {
+        const types = e.dataTransfer.types;
+        if (!types) return;
+        if (!Array.from(types).includes('Files')) return;
+        dragCounter++;
+        if (dragCounter === 1) {
+            document.querySelectorAll('.chat-input-bar').forEach(function(el) {
+                el.classList.add('drag-over');
+            });
+        }
+    });
+    body.addEventListener('dragover', function(e) {
+        const types = e.dataTransfer.types;
+        if (!types) return;
+        if (!Array.from(types).includes('Files')) return;
+        e.preventDefault();
+        e.stopPropagation();
+    });
+    body.addEventListener('dragleave', function(e) {
+        dragCounter--;
+        if (dragCounter <= 0) {
+            dragCounter = 0;
+            document.querySelectorAll('.chat-input-bar').forEach(function(el) {
+                el.classList.remove('drag-over');
+            });
+        }
+    });
+    body.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter = 0;
+        document.querySelectorAll('.chat-input-bar').forEach(function(el) {
+            el.classList.remove('drag-over');
+        });
+        var inputBar = e.target.closest('.chat-input-bar');
+        if (!inputBar) return;
+        var files = e.dataTransfer.files;
+        if (!files || files.length === 0) return;
+        Array.from(files).forEach(function(file) {
+            var formData = new FormData();
+            formData.append('file', file, file.name);
+            fetch(window._backendUrl + '/upload/upload', { method: 'POST', body: formData })
+                .then(function(r) {
+                    if (!r.ok) { throw new Error('HTTP ' + r.status); }
+                    return r.json();
+                })
+                .then(function(data) { window.__dropResults.push(data); })
+                .catch(function(err) {
+                    console.error('Drop upload failed:', err);
+                    if (!window.__dropErrors) window.__dropErrors = [];
+                    window.__dropErrors.push({error: (err.message || String(err)), filename: file.name});
+                });
+        });
+    });
+});
+</script>''')
+
     has_model = _list_available_models() != ["No model available"]
 
     with ui.column().classes("full-height-container w-full"):
@@ -585,13 +704,14 @@ def chat_page():
 
         with ui.column().classes("chat-input-bar w-full bg-white dark:bg-gray-900 px-3 py-2"):
             preview_container = ui.row().classes("w-full gap-2 flex-wrap hidden")
+            drop_indicator = ui.label("  Drop files here to upload").classes("drop-indicator")
 
             with ui.row().classes("w-full items-center gap-2 max-w-4xl mx-auto"):
 
-                def _on_upload(e):
-                    file_content = e.content.read()
-                    file_name = e.name or "file"
+                async def _on_upload(e):
                     try:
+                        file_content = await e.file.read() if hasattr(e, "file") else e.content.read()
+                        file_name = getattr(e.file, 'name', '') or getattr(e, 'name', '') or "file"
                         resp = requests.post(
                             f"{_BACKEND_URL}/api/v1/upload/upload",
                             files={"file": (file_name, file_content)},
@@ -603,7 +723,7 @@ def chat_page():
                             with preview_container:
                                 with ui.row().classes("items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded px-2 py-1"):
                                     if data.get("mime_type", "").startswith("image/"):
-                                        img_url = data["url"]
+                                        img_url = f"{_BACKEND_URL}{data.get("url", "")}" if data.get("url", "").startswith("/") else data.get("url", "")
                                         ui.image(img_url).classes("w-8 h-8 rounded object-cover")
                                     else:
                                         ui.icon("description").props("size=20px").classes("text-gray-500")
@@ -648,10 +768,10 @@ def chat_page():
                     if attachments:
                         for att in attachments:
                             if att.get("mime_type", "").startswith("image/"):
-                                img_url = att["url"]
+                                img_url = f"{_BACKEND_URL}{att["url"]}" if att["url"].startswith("/") else att["url"]
                                 ui.image(img_url).classes("max-w-xs rounded mb-1")
                             else:
-                                file_url = att["url"]
+                                file_url = f"{_BACKEND_URL}{att["url"]}" if att["url"].startswith("/") else att["url"]
                                 ui.link(att["filename"], file_url).classes("text-sm block mb-1")
                     ui.markdown(text)
 
@@ -661,7 +781,7 @@ def chat_page():
             full = ""
             try:
                 agent = _get_agent()
-                async for token in agent.stream_chat(text):
+                async for token in agent.stream_chat(text, attachments=attachments if attachments else None):
                     full += token
                     bubble.clear()
                     with bubble:
@@ -694,6 +814,57 @@ def chat_page():
 
         send_btn.on_click(do_send)
         input_field.on("keydown.enter", do_send)
+
+    # Polling timer for detecting files dropped via JS drag-and-drop
+    async def _check_drop_results():
+        try:
+            result_json = await ui.run_javascript(
+                "JSON.stringify(window.__dropResults || [])",
+                respond=True,
+                timeout=3.0
+            )
+            # Check for JS-side upload errors
+            err_json = await ui.run_javascript(
+                "JSON.stringify(window.__dropErrors || [])",
+                respond=True,
+                timeout=2.0
+            )
+            if err_json and err_json != "[]":
+                import json as _json
+                errs = _json.loads(err_json)
+                for err_data in errs:
+                    err_msg = err_data.get("error", "Unknown error")
+                    err_fn = err_data.get("filename", "file")
+                    ui.notify(f"Cannot upload {err_fn}: {err_msg}", type="negative")
+                await ui.run_javascript("window.__dropErrors = []")
+            if result_json and result_json != "[]":
+                import json as _json
+                results = _json.loads(result_json)
+                for data in results:
+                    _pending_attachments.append(data)
+                    # Show in preview
+                    with preview_container:
+                        with ui.row().classes("items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded px-2 py-1"):
+                            mime = data.get("mime_type", "")
+                            if mime.startswith("image/"):
+                                img_url = f"{_BACKEND_URL}{data['url']}" if data["url"].startswith("/") else data["url"]
+                                ui.image(img_url).classes("w-8 h-8 rounded object-cover")
+                            else:
+                                ui.icon("description").props("size=20px").classes("text-gray-500")
+                            ui.label(data.get("filename", "file")[:15]).classes("text-xs truncate max-w-24")
+                            ui.button(icon="close", on_click=lambda d=data: (
+                                _pending_attachments.remove(d) if d in _pending_attachments else None,
+                                preview_container.clear(),
+                                preview_container.classes(add="hidden"),
+                            )).props("flat dense round size=xs").classes("text-gray-400")
+                    preview_container.classes(remove="hidden")
+                    ui.notify(f"Uploaded: {data.get('filename', 'file')}", type="positive")
+                await ui.run_javascript("window.__dropResults = []")
+        except Exception as ex:
+            import logging
+            logging.getLogger("research_agent.frontend").warning("Drop check error: %s", ex)
+
+    ui.timer(0.6, _check_drop_results)
 
     # Initialize session (outside any with block to avoid parent-slot issues)
     def _init_session_sync():

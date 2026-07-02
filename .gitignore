@@ -58,3 +58,8 @@ build/
 
 # Generated reports (track the templates, not the output)
 reports/output/
+# Runtime logs
+frontend*.err
+frontend*.log
+frontend*_live.txt
+_extract_agent.py

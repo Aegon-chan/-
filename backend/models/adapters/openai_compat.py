@@ -15,6 +15,14 @@ from openai import AsyncOpenAI
 from backend.models.base import BaseLLM, Message, ModelResponse
 from backend.core.exceptions import ConfigError, ModelError
 
+
+
+# 支持图片多模态的模型ID集合
+_VISION_MODELS = {
+    "gpt-4o", "gpt-4o-mini", "gpt-4-turbo",
+    "moonshot-v1-8k-vision-preview",
+}
+
 logger = logging.getLogger("research_agent.models")
 
 
@@ -40,12 +48,38 @@ class OpenAICompatibleLLM(BaseLLM):
         )
 
     @staticmethod
-    def _convert_messages(messages: list[Message]) -> list[dict]:
-        """将内部 Message 列表转为 OpenAI API 格式"""
+    def _convert_messages(messages: list[Message], supports_vision: bool = False) -> list[dict]:
+        """将内部 Message 列表转为 OpenAI API 格式
+
+        如果消息包含 multimodal_parts，则构建多模态 content 数组。
+        """
         result = []
         for m in messages:
-            entry = {"role": m.role, "content": m.content}
-            result.append(entry)
+            if not m.multimodal_parts:
+                result.append({"role": m.role, "content": m.content})
+                continue
+
+            # 多模态消息：content 为数组
+            content_parts = []
+            if m.content:
+                content_parts.append({"type": "text", "text": m.content})
+
+            for part in m.multimodal_parts:
+                if part.type == "image_base64":
+                    if supports_vision:
+                        content_parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": part.image_base64},
+                        })
+                    else:
+                        content_parts.append({
+                            "type": "text",
+                            "text": f"[附图片: {part.mime_type}]",
+                        })
+                elif part.type == "text" and part.text:
+                    content_parts.append({"type": "text", "text": part.text})
+
+            result.append({"role": m.role, "content": content_parts})
         return result
 
     async def chat(
@@ -58,7 +92,7 @@ class OpenAICompatibleLLM(BaseLLM):
         try:
             response = await self._client.chat.completions.create(
                 model=self.model_name,
-                messages=self._convert_messages(messages),
+                messages=self._convert_messages(messages, supports_vision=self.model_id in _VISION_MODELS),
                 temperature=temperature,
                 max_tokens=max_tokens,
                 **kwargs,
@@ -90,7 +124,7 @@ class OpenAICompatibleLLM(BaseLLM):
         try:
             stream = await self._client.chat.completions.create(
                 model=self.model_name,
-                messages=self._convert_messages(messages),
+                messages=self._convert_messages(messages, supports_vision=self.model_id in _VISION_MODELS),
                 temperature=temperature,
                 max_tokens=max_tokens,
                 stream=True,

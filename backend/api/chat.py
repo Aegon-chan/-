@@ -10,6 +10,7 @@ from backend.db.models import Session as SessionModel, Message
 from backend.schemas.chat import ChatRequest, ChatResponse, StreamEvent
 from backend.core.exceptions import NotFoundError, ModelError
 from backend.models.registry import ModelRegistry
+from backend.uploads import process_attachments
 
 router = APIRouter()
 
@@ -47,7 +48,9 @@ async def create_chat_completion(
         )
 
     from backend.models.base import Message as LLMMessage
-    llm_messages = [LLMMessage(role="user", content=body.message)]
+    from backend.models.base import ContentPart
+    multimodal_parts = process_attachments(body.attachments)
+    llm_messages = [LLMMessage(role="user", content=body.message, multimodal_parts=multimodal_parts)]
     if session.system_prompt:
         llm_messages.insert(0, LLMMessage(role="system", content=session.system_prompt))
 
@@ -113,7 +116,9 @@ async def stream_chat(
         )
 
     from backend.models.base import Message as LLMMessage
-    llm_messages = [LLMMessage(role="user", content=body.message)]
+    from backend.models.base import ContentPart
+    multimodal_parts = process_attachments(body.attachments)
+    llm_messages = [LLMMessage(role="user", content=body.message, multimodal_parts=multimodal_parts)]
     if session.system_prompt:
         llm_messages.insert(0, LLMMessage(role="system", content=session.system_prompt))
 

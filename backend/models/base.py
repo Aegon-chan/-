@@ -12,10 +12,20 @@ from typing import AsyncGenerator
 
 
 @dataclass
+class ContentPart:
+    """多模态内容片段"""
+    type: str          # "text" | "image_base64"
+    text: str = ""
+    image_base64: str = ""
+    mime_type: str = ""
+
+
+@dataclass
 class Message:
     """对话消息"""
     role: str  # user / assistant / system / tool
-    content: str
+    content: str = ""
+    multimodal_parts: list[ContentPart] = field(default_factory=list)
 
 
 @dataclass

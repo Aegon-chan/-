@@ -1,0 +1,271 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Research Agent</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      id="nicegui-color-scheme"
+      name="color-scheme"
+      content="light"
+    />
+    <link href="/_nicegui/3.13.0/static/favicon.ico" rel="shortcut icon" />
+    <style>
+      @layer theme, base, quasar, nicegui, components, utilities, overrides, quasar_importants;
+      @import url("/_nicegui/3.13.0/static/fonts.css") layer(base);
+      
+        @import url("/_nicegui/3.13.0/static/quasar.unimportant.prod.css") layer(quasar);
+        @import url("/_nicegui/3.13.0/static/quasar.important.prod.css") layer(quasar_importants);
+      
+      @import url("/_nicegui/3.13.0/static/nicegui.css") layer(nicegui);
+      @layer quasar {
+        blockquote, dd, dl, figure, h1, h2, h3, h4, h5, h6, hr, p, pre {
+          margin: revert-layer; /* HACK: revert Quasar's margin styles */
+        }
+      }
+      @layer overrides {
+        .rotate-45, .rotate-90, .rotate-135, .rotate-180, .rotate-225, .rotate-270, .rotate-315 {
+  rotate: 0deg;
+}
+        .column.inline, .flex.inline, .row.inline {
+          display: inline-flex;  /* HACK: re-apply Quasar's inline styles to override Tailwind */
+        }
+        .nicegui-dialog-open,
+        .nicegui-select-popup-open,
+        .nicegui-table-fullscreen {
+          scroll-behavior: auto !important; /* HACK: avoid smooth-scrolling when dialogs or select popups close */
+        }
+      }
+    </style>
+    <script type="importmap">
+      {"imports": {"vue":"/_nicegui/3.13.0/static/vue.esm-browser.prod.js","sass":"/_nicegui/3.13.0/static/sass.default.js","immutable":"/_nicegui/3.13.0/static/immutable.es.js","dompurify":"/_nicegui/3.13.0/static/dompurify.mjs","nicegui-codemirror":"/_nicegui/3.13.0/esm/579889d3739de6e3c936ac06a6a38c7c/index.js","nicegui-codemirror/":"/_nicegui/3.13.0/esm/579889d3739de6e3c936ac06a6a38c7c/","nicegui-joystick":"/_nicegui/3.13.0/esm/cf6d95d95d7734c7c715330073bd6650/index.js","nicegui-joystick/":"/_nicegui/3.13.0/esm/cf6d95d95d7734c7c715330073bd6650/","nicegui-echart":"/_nicegui/3.13.0/esm/06157cddc6d91987fbd2245d12ec57b5/index.js","nicegui-echart/":"/_nicegui/3.13.0/esm/06157cddc6d91987fbd2245d12ec57b5/","nicegui-plotly":"/_nicegui/3.13.0/esm/149176e8e1b524b9b57965479580dcd2/index.js","nicegui-plotly/":"/_nicegui/3.13.0/esm/149176e8e1b524b9b57965479580dcd2/","nicegui-leaflet":"/_nicegui/3.13.0/esm/af2527dc1b5b25c879d016a44c51a696/index.js","nicegui-leaflet/":"/_nicegui/3.13.0/esm/af2527dc1b5b25c879d016a44c51a696/","nicegui-scene":"/_nicegui/3.13.0/esm/1146d81f366ef142f896398cb08bab0d/index.js","nicegui-scene/":"/_nicegui/3.13.0/esm/1146d81f366ef142f896398cb08bab0d/","nicegui-aggrid":"/_nicegui/3.13.0/esm/5a1be4e31a0859b54ebba62e565d7030/index.js","nicegui-aggrid/":"/_nicegui/3.13.0/esm/5a1be4e31a0859b54ebba62e565d7030/","nicegui-mermaid":"/_nicegui/3.13.0/esm/d6305670159e7d08ddc03c1e90565924/index.js","nicegui-mermaid/":"/_nicegui/3.13.0/esm/d6305670159e7d08ddc03c1e90565924/","nicegui-xterm":"/_nicegui/3.13.0/esm/d195167d74a6af63712fcc1887c006aa/index.js","nicegui-xterm/":"/_nicegui/3.13.0/esm/d195167d74a6af63712fcc1887c006aa/","nicegui-json-editor":"/_nicegui/3.13.0/esm/fff9d3e222514efef6ef6463538abecd/index.js","nicegui-json-editor/":"/_nicegui/3.13.0/esm/fff9d3e222514efef6ef6463538abecd/"}}
+    </script>
+    <script>
+      addStyle = (c) => document.head.append(Object.assign(document.createElement("style"), { textContent: c }));
+    </script>
+    
+<style>
+.full-height-container { display: flex; flex-direction: column; height: calc(100vh - 64px); }
+.chat-messages-area { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+.chat-input-bar { flex: 0 0 auto; position: relative; }
+.chat-messages-area::-webkit-scrollbar { width: 6px; }
+.chat-messages-area::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+.chat-messages-area::-webkit-scrollbar-thumb:hover { background: #aaa; }
+/* Drag-and-drop overlay */
+.chat-input-bar.drag-over {
+    border: 2px dashed #4a9eff !important;
+    background-color: rgba(74, 158, 255, 0.06) !important;
+    border-radius: 10px !important;
+}
+.drop-indicator {
+    display: none;
+    text-align: center;
+    padding: 10px 16px;
+    color: #4a9eff;
+    font-size: 14px;
+    font-weight: 500;
+    border: 2px dashed #4a9eff;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    background-color: rgba(74, 158, 255, 0.05);
+    transition: all 0.2s ease;
+}
+.chat-input-bar.drag-over .drop-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+@media (max-width: 600px) { .q-drawer { width: 260px !important; } }
+</style>
+
+
+    <!-- prevent Prettier from removing this line -->
+    
+    <link rel="modulepreload" href="/_nicegui/3.13.0/static/vue.esm-browser.prod.js" />
+    
+    <link rel="modulepreload" href="/_nicegui/3.13.0/components/49e50883a43ed0da41bdb20bb2e6ade3/refreshable.js" />
+    
+    <link rel="modulepreload" href="/_nicegui/3.13.0/components/034b6c5b9aec655d76a5deef7cf981a3/header.js" />
+    
+    <link rel="modulepreload" href="/_nicegui/3.13.0/components/727e1614994cad7472c67df57b3b3932/select.js" />
+    
+    <link rel="modulepreload" href="/_nicegui/3.13.0/components/1ec1b6fc9fc7dc50f363db78489f0225/markdown.js" />
+    
+    <link rel="modulepreload" href="/_nicegui/3.13.0/components/6b9b0eecd08e9dfefdbf6eb35c66859e/upload.js" />
+    
+    <link rel="modulepreload" href="/_nicegui/3.13.0/components/3eddd3793e419b355d43fea5500668dd/input.js" />
+    
+    <link rel="modulepreload" href="/_nicegui/3.13.0/components/bb74efa6f44f7dfe8872fbf9e7d4534a/timer.js" />
+    
+    <!-- prevent Prettier from removing this line -->
+    
+    <style type="text/tailwindcss">
+      @custom-variant dark (&:where(body.body--dark, body.body--dark *));
+    </style>
+    
+    <!-- prevent Prettier from removing this line -->
+    
+  </head>
+  <body>
+    <script defer src="/_nicegui/3.13.0/static/socket.io.min.js"></script>
+    
+    <script defer src="/_nicegui/3.13.0/static/tailwindcss.min.js"></script>
+    
+    <script type="module">
+      import * as Vue from "vue";
+      globalThis.Vue = Vue;
+      document.getElementById("esm-fallback")?.remove();
+    </script>
+    
+    <script defer src="/_nicegui/3.13.0/static/quasar.umd.prod.js"></script>
+    
+    <script defer src="/_nicegui/3.13.0/static/nicegui.js"></script>
+
+    <script defer src="/_nicegui/3.13.0/static/lang/en-US.umd.prod.js"></script>
+    <style></style>
+<script>
+// Drag-and-drop file upload handler
+window.__dropResults = [];
+window._backendUrl = 'http://localhost:8000/api/v1';
+
+document.addEventListener('DOMContentLoaded', function() {
+    let dragCounter = 0;
+    const body = document.body;
+    body.addEventListener('dragenter', function(e) {
+        const types = e.dataTransfer.types;
+        if (!types) return;
+        if (!Array.from(types).includes('Files')) return;
+        dragCounter++;
+        if (dragCounter === 1) {
+            document.querySelectorAll('.chat-input-bar').forEach(function(el) {
+                el.classList.add('drag-over');
+            });
+        }
+    });
+    body.addEventListener('dragover', function(e) {
+        const types = e.dataTransfer.types;
+        if (!types) return;
+        if (!Array.from(types).includes('Files')) return;
+        e.preventDefault();
+        e.stopPropagation();
+    });
+    body.addEventListener('dragleave', function(e) {
+        dragCounter--;
+        if (dragCounter <= 0) {
+            dragCounter = 0;
+            document.querySelectorAll('.chat-input-bar').forEach(function(el) {
+                el.classList.remove('drag-over');
+            });
+        }
+    });
+    body.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter = 0;
+        document.querySelectorAll('.chat-input-bar').forEach(function(el) {
+            el.classList.remove('drag-over');
+        });
+        var inputBar = e.target.closest('.chat-input-bar');
+        if (!inputBar) return;
+        var files = e.dataTransfer.files;
+        if (!files || files.length === 0) return;
+        Array.from(files).forEach(function(file) {
+            var formData = new FormData();
+            formData.append('file', file, file.name);
+            fetch(window._backendUrl + '/upload/upload', { method: 'POST', body: formData })
+                .then(function(r) { return r.json(); })
+                .then(function(data) { window.__dropResults.push(data); })
+                .catch(function(err) { console.error('Drop upload failed:', err); });
+        });
+    });
+});
+</script>
+
+
+
+    <style>
+      #esm-fallback {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        height: 100vh;
+        font-family: sans-serif;
+        color: #888;
+        opacity: 0;
+        animation: esm-fallback-reveal 0s 1s forwards;
+      }
+      @keyframes esm-fallback-reveal {
+        to {
+          opacity: 1;
+        }
+      }
+      #esm-fallback ~ * {
+        display: none;
+      }
+    </style>
+    <div id="esm-fallback">Your browser does not support ES modules.<br />Please use a modern browser.</div>
+    <div id="app" ></div>
+    <div id="nicegui-keep-alive-cache" style="display: none" aria-hidden="true"></div>
+    <div id="popup" class="nicegui-error-popup" aria-hidden="true">
+      <span>Connection lost.</span>
+      <span>Trying to reconnect...</span>
+    </div>
+    <div id="too_long_message_popup" class="nicegui-error-popup" aria-hidden="true">
+      <span>Message too long</span>
+      <span>The message is too large for WebSocket transmission.</span>
+    </div>
+    <script type="module">
+      // Load DOMPurify for HTML sanitization
+      // NOTE: Always use DOMPurify instead of native setHTML because native setHTML strips class attributes.
+      import DOMPurify from "dompurify";
+      Element.prototype.setHTML = function (html) {
+        this.innerHTML = DOMPurify.sanitize(html);
+      };
+
+      const app = createApp(parseElements(String.raw`{"0":{"tag":"q-layout","class":["nicegui-layout"],"props":{"view":"hHh Lpr fff"},"children":[20,4,1],"events":[{"listener_id":"2d908ef8-687a-4683-af20-e8fc0bdafc1d","type":"sub_pages_open","specials":[],"modifiers":[],"keys":[],"args":null,"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null},{"listener_id":"ae0dddc4-a69e-472e-bcd3-a3c474e98a7c","type":"sub_pages_navigate","specials":[],"modifiers":[],"keys":[],"args":null,"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"1":{"tag":"q-page-container","children":[2]},"2":{"tag":"q-page","children":[3]},"3":{"tag":"div","class":["nicegui-content"],"children":[25,40,41]},"4":{"tag":"q-drawer","class":["nicegui-drawer","bg-gray-100","dark:bg-gray-800"],"props":{"model-value":null,"loopback":true,"show-if-above":true,"side":"left","bordered":false,"elevated":false},"children":[5],"events":[{"listener_id":"19dea706-8bde-4175-918f-c2f6688c645d","type":"update:modelValue","specials":[],"modifiers":[],"keys":[],"args":[null],"throttle":0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"5":{"tag":"div","class":["nicegui-column","w-full","h-full","justify-between"],"children":[6,11,12]},"6":{"tag":"div","class":["nicegui-column","w-full","overflow-y-auto","flex-1"],"children":[7,8,9]},"7":{"tag":"div","text":"Sessions","class":["text-lg","font-bold","px-3","pt-3","pb-1"]},"8":{"tag":"q-btn","class":["w-[calc(100%-16px)]","mx-2","mb-1"],"props":{"color":"primary","label":"New","icon":"add","flat":true},"events":[{"listener_id":"b142a1c9-1252-4a82-a82c-41a30ab4ef24","type":"click","specials":[],"modifiers":[],"keys":[],"args":[],"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"9":{"tag":"nicegui-refreshable","children":[10]},"10":{"tag":"div","text":"（暂无对话）","class":["text-gray-400","text-sm","px-2"]},"11":{"tag":"q-separator","class":["nicegui-separator"]},"12":{"tag":"div","class":["nicegui-column","w-full","px-2","pb-2","gap-0"],"children":[13,14,15,16,17,18,19]},"13":{"tag":"div","text":"Navigate","class":["text-lg","font-bold","px-2","pt-1","pb-1"]},"14":{"tag":"q-btn","class":["w-full","justify-start"],"props":{"color":"primary","label":"Chat","icon":"chat","flat":true},"events":[{"listener_id":"2f37593f-0c2d-42a0-8e0c-07eca3a1fa34","type":"click","specials":[],"modifiers":[],"keys":[],"args":[],"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"15":{"tag":"q-btn","class":["w-full","justify-start"],"props":{"color":"primary","label":"NL2Query","icon":"code","flat":true},"events":[{"listener_id":"908d7738-a63b-4f51-b8a5-b5a3e216b346","type":"click","specials":[],"modifiers":[],"keys":[],"args":[],"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"16":{"tag":"q-btn","class":["w-full","justify-start"],"props":{"color":"primary","label":"Charts","icon":"bar_chart","flat":true},"events":[{"listener_id":"bc18bb31-4261-40b3-9f8b-1d24d592375e","type":"click","specials":[],"modifiers":[],"keys":[],"args":[],"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"17":{"tag":"q-btn","class":["w-full","justify-start"],"props":{"color":"primary","label":"Knowledge","icon":"library_books","flat":true},"events":[{"listener_id":"cda2468a-6c15-4776-84be-524101f45460","type":"click","specials":[],"modifiers":[],"keys":[],"args":[],"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"18":{"tag":"q-btn","class":["w-full","justify-start"],"props":{"color":"primary","label":"Memory","icon":"psychology","flat":true},"events":[{"listener_id":"36b76cf3-9c41-4279-a078-930d10d7f4aa","type":"click","specials":[],"modifiers":[],"keys":[],"args":[],"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"19":{"tag":"q-btn","class":["w-full","justify-start"],"props":{"color":"primary","label":"Settings","icon":"settings","flat":true},"events":[{"listener_id":"41c13812-22e1-4948-9ab8-da30aa1bfd5a","type":"click","specials":[],"modifiers":[],"keys":[],"args":[],"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"20":{"tag":"nicegui-header","class":["nicegui-header","wrap","items-center","justify-between"],"props":{"model-value":true,"loopback":true,"bordered":false,"elevated":true,"add-scroll-padding":true},"children":[21,24],"events":[{"listener_id":"92bdddaf-5301-4598-a245-609628e5d3d0","type":"update:modelValue","specials":[],"modifiers":[],"keys":[],"args":[null],"throttle":0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"21":{"tag":"div","class":["nicegui-row","row","items-center","gap-2"],"children":[22,23]},"22":{"tag":"q-btn","class":["lg:hidden"],"props":{"color":"primary","label":"","icon":"menu","flat":true,"dense":true,"round":true},"events":[{"listener_id":"b04581f7-9c9d-41e9-bd30-92a51147885d","type":"click","specials":[],"modifiers":[],"keys":[],"args":[],"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"23":{"tag":"div","text":"Research Agent","class":["text-lg","font-bold"]},"24":{"tag":"nicegui-select","class":["w-52"],"props":{"model-value":{"value":0,"label":"deepseek-chat"},"options":[{"value":0,"label":"deepseek-chat"}],"loopback":true,"error":null,"label":"Model","outlined":true,"dense":true},"events":[{"listener_id":"fcb2a807-1bf2-40c3-acdd-06b339b9f597","type":"update:modelValue","specials":[],"modifiers":[],"keys":[],"args":[null],"throttle":0,"leading_events":true,"trailing_events":true,"js_handler":null},{"listener_id":"47bd7df5-d59c-4ef4-a3b7-8f83c392dbbd","type":"popupShow","specials":[],"modifiers":[],"keys":[],"args":null,"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null},{"listener_id":"3ad0616e-2c5b-4865-9b9e-976aba7e49cb","type":"popupHide","specials":[],"modifiers":[],"keys":[],"args":null,"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"25":{"tag":"div","class":["nicegui-column","full-height-container","w-full"],"children":[26,33]},"26":{"tag":"div","class":["nicegui-column","chat-messages-area","w-full","px-4"],"children":[27,29,30,31,32]},"27":{"tag":"div","class":["nicegui-column","w-full","max-w-4xl","mx-auto","gap-3","py-2"],"children":[28]},"28":{"tag":"nicegui-markdown","class":["nicegui-markdown"],"props":{"innerHTML":"&lt;h2&gt;Welcome to Research Agent&lt;/h2&gt;\n\n&lt;p&gt;I am your research data analysis assistant, supporting:&lt;/p&gt;\n\n&lt;ul&gt;\n&lt;li&gt;&lt;strong&gt;Chat&lt;/strong&gt;: Natural language Q&amp;amp;A&lt;/li&gt;\n&lt;li&gt;&lt;strong&gt;NL2Query&lt;/strong&gt;: Natural language to Python code&lt;/li&gt;\n&lt;li&gt;&lt;strong&gt;Charts&lt;/strong&gt;: Custom chart styling&lt;/li&gt;\n&lt;li&gt;&lt;strong&gt;Knowledge&lt;/strong&gt;: Document upload &amp;amp; retrieval&lt;/li&gt;\n&lt;/ul&gt;\n\n&lt;p&gt;Type your question below or explore features via the sidebar.&lt;/p&gt;\n","sanitize":true,"resource-name":"codehilite_821444cf7f8b10160cbba208f6dd37d9.css","dynamic-resource-path":"/_nicegui/3.13.0/dynamic_resources"}},"29":{"tag":"div","class":["nicegui-row","row","items-center","gap-1","ml-12","hidden"]},"30":{"tag":"div","text":"","class":["text-xs","text-gray-400"]},"31":{"tag":"q-btn","props":{"color":"green","label":"","icon":"thumb_up","flat":true,"dense":true,"round":true,"size":"sm"},"events":[{"listener_id":"d72c02fa-0b69-48f5-9390-052140656023","type":"click","specials":[],"modifiers":[],"keys":[],"args":[],"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"32":{"tag":"q-btn","props":{"color":"red","label":"","icon":"thumb_down","flat":true,"dense":true,"round":true,"size":"sm"},"events":[{"listener_id":"6f26d5a9-c7e0-4ebd-9765-0cb6bd4cb07b","type":"click","specials":[],"modifiers":[],"keys":[],"args":[],"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"33":{"tag":"div","class":["nicegui-column","chat-input-bar","w-full","bg-white","dark:bg-gray-900","px-3","py-2"],"children":[34,35,36]},"34":{"tag":"div","class":["nicegui-row","row","w-full","gap-2","flex-wrap","hidden"]},"35":{"tag":"div","text":"  Drop files here to upload","class":["drop-indicator"]},"36":{"tag":"div","class":["nicegui-row","row","w-full","items-center","gap-2","max-w-4xl","mx-auto"],"children":[37,38,39]},"37":{"tag":"nicegui-upload","class":["shrink-0"],"props":{"label":"","url":"/_nicegui/client/e4d57d66-87eb-4664-ad66-1b4ac274d246/upload/37","flat":true,"dense":true,"round":true,"icon":"attach_file"}},"38":{"tag":"nicegui-input","class":["flex-1"],"props":{"value":"","loopback":false,"error":null,"for":"c38","placeholder":"Type your question, press Enter to send...","type":"text","_autocomplete":[],"clearable":true,"autofocus":true},"events":[{"listener_id":"a83b13bf-0d50-456a-8985-cf1ffcb36069","type":"update:value","specials":[],"modifiers":[],"keys":[],"args":[null],"throttle":0,"leading_events":true,"trailing_events":true,"js_handler":null},{"listener_id":"c88a09a1-47a9-466d-8340-f04aaf70922d","type":"keydown","specials":[],"modifiers":[],"keys":["enter"],"args":null,"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"39":{"tag":"q-btn","props":{"color":"primary","label":"Send","icon":"send","flat":true},"events":[{"listener_id":"b7376d1c-fe9a-4e9a-afa6-ca3b34b0fd35","type":"click","specials":[],"modifiers":[],"keys":[],"args":[],"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"40":{"tag":"nicegui-timer"},"41":{"tag":"nicegui-timer"}}`), {
+        version: "3.13.0",
+        prefix: "",
+        query: {'client_id': 'e4d57d66-87eb-4664-ad66-1b4ac274d246', 'next_message_id': 0, 'implicit_handshake': True},
+        extraHeaders: {},
+        transports: ['websocket', 'polling'],
+      });
+      const dark = False;
+      const language = "en-US";
+      const vue_config = {"brand":{"primary":"#5898d4","secondary":"#26a69a","accent":"#9c27b0","dark":"#1d1d1d","dark-page":"#121212","positive":"#21ba45","negative":"#c10015","info":"#31ccec","warning":"#f2c037"},"loadingBar":{"color":"primary","skipHijack":false}};
+      
+        app.use(Quasar, {config: vue_config});
+        applyColors(vue_config.brand);
+        Quasar.lang.set(Quasar.lang[language.replace('-', '')]);
+        darkSetter = (dark) => Quasar.Dark.set(dark === None ? "auto" : dark);
+        setDark(dark);
+    
+
+      import { default as refreshable } from "/_nicegui/3.13.0/components/49e50883a43ed0da41bdb20bb2e6ade3/refreshable.js";
+app.component("nicegui-refreshable", refreshable);
+import { default as header } from "/_nicegui/3.13.0/components/034b6c5b9aec655d76a5deef7cf981a3/header.js";
+app.component("nicegui-header", header);
+import { default as select } from "/_nicegui/3.13.0/components/727e1614994cad7472c67df57b3b3932/select.js";
+app.component("nicegui-select", select);
+import { default as markdown } from "/_nicegui/3.13.0/components/1ec1b6fc9fc7dc50f363db78489f0225/markdown.js";
+app.component("nicegui-markdown", markdown);
+import { default as upload } from "/_nicegui/3.13.0/components/6b9b0eecd08e9dfefdbf6eb35c66859e/upload.js";
+app.component("nicegui-upload", upload);
+import { default as input } from "/_nicegui/3.13.0/components/3eddd3793e419b355d43fea5500668dd/input.js";
+app.component("nicegui-input", input);
+import { default as timer } from "/_nicegui/3.13.0/components/bb74efa6f44f7dfe8872fbf9e7d4534a/timer.js";
+app.component("nicegui-timer", timer);
+      
+
+      app.mount("#app");
+
+      // Scroll to fragment after Vue mounts (browser's native scroll may have failed if element wasn't ready)
+      if (window.location.hash) {
+        Vue.nextTick(() => {
+          const fragment = window.location.hash.substring(1);
+          (document.getElementById(fragment) || document.querySelector(`a[name="${fragment}"]`))?.scrollIntoView();
+        });
+      }
+    </script>
+  </body>
+</html>
