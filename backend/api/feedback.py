@@ -1,4 +1,4 @@
-﻿"""反馈 API 路由"""
+"""反馈 API 路由"""
 
 from __future__ import annotations
 

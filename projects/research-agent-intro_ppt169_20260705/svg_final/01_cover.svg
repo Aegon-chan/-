@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0D2B4E" />
+      <stop offset="50%" stop-color="#1565C0" />
+      <stop offset="100%" stop-color="#0D2B4E" />
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00BFA5" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#7C4DFF" stop-opacity="0" />
+    </linearGradient>
+    <radialGradient id="spotlight" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#1565C0" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#1565C0" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bgGrad)" />
+  <g stroke="#FFFFFF" stroke-opacity="0.04" stroke-width="1">
+    <line x1="0" y1="120" x2="1280" y2="120" />
+    <line x1="0" y1="240" x2="1280" y2="240" />
+    <line x1="0" y1="360" x2="1280" y2="360" />
+    <line x1="0" y1="480" x2="1280" y2="480" />
+    <line x1="0" y1="600" x2="1280" y2="600" />
+    <line x1="160" y1="0" x2="160" y2="720" />
+    <line x1="320" y1="0" x2="320" y2="720" />
+    <line x1="480" y1="0" x2="480" y2="720" />
+    <line x1="640" y1="0" x2="640" y2="720" />
+    <line x1="800" y1="0" x2="800" y2="720" />
+    <line x1="960" y1="0" x2="960" y2="720" />
+    <line x1="1120" y1="0" x2="1120" y2="720" />
+  </g>
+  <circle cx="640" cy="300" r="400" fill="url(#spotlight)" />
+  <circle cx="200" cy="150" r="120" fill="none" stroke="#00BFA5" stroke-opacity="0.12" stroke-width="2" />
+  <circle cx="200" cy="150" r="80" fill="none" stroke="#00BFA5" stroke-opacity="0.08" stroke-width="1" />
+  <circle cx="1100" cy="550" r="100" fill="none" stroke="#7C4DFF" stroke-opacity="0.1" stroke-width="2" />
+  <circle cx="1100" cy="550" r="60" fill="none" stroke="#7C4DFF" stroke-opacity="0.06" stroke-width="1" />
+  <rect x="60" y="0" width="3" height="120" fill="#00BFA5" fill-opacity="0.5" />
+  <rect x="0" y="690" width="1280" height="30" fill="url(#glowGrad)" />
+  <text x="640" y="280" font-family="Arial, Microsoft YaHei, PingFang SC, sans-serif" font-size="72" font-weight="bold" fill="#FFFFFF" text-anchor="middle" letter-spacing="4">Research Agent</text>
+  <path fill="#00BFA5" d="M522,310 H758 A2,2 0 0 1 760,312 V312 A2,2 0 0 1 758,314 H522 A2,2 0 0 1 520,312 V312 A2,2 0 0 1 522,310 Z" />
+  <text x="640" y="360" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="28" fill="#E0E7FF" text-anchor="middle" letter-spacing="2">自我成长型科研数据分析助手</text>
+  <text x="640" y="400" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="16" fill="#94A3B8" text-anchor="middle">面向地质变形监测 / 水文监测 / 科学研究的 AI 智能分析平台</text>
+  <text x="640" y="660" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="14" fill="#64748B" text-anchor="middle" letter-spacing="1">2026.07  |  v0.1.0</text>
+</svg>

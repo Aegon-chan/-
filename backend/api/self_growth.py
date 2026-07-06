@@ -1,4 +1,4 @@
-﻿"""自成长状态与运维 API 路由。"""
+"""自成长状态与运维 API 路由。"""
 
 from __future__ import annotations
 

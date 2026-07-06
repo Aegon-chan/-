@@ -170,6 +170,7 @@ class ResearchAgent:
         self._last_merge_time: float = time.time()
         self._last_prompt_eval_time: float = time.time()
         self._optimization_thread: Optional[threading.Thread] = None
+        self._strategy: Optional[StrategyLibrary] = None
 
         # 启动后台优化线程
         self._implicit_feedback: Optional[ImplicitFeedbackCollector] = None
@@ -212,17 +213,6 @@ class ResearchAgent:
             db_path = f"./data/feedback_{self.user_id}.db"
             self._feedback_collector = FeedbackCollector(db_path=db_path)
         return self._feedback_collector
-
-    @property
-    def implicit_feedback(self) -> ImplicitFeedbackCollector:
-        """Lazy-initialized implicit feedback collector."""
-        if self._implicit_feedback is None:
-            from backend.config import settings
-            self._implicit_feedback = ImplicitFeedbackCollector(
-                db_path=f"./data/feedback_{self.user_id}.db",
-                enable=getattr(settings, "feature_implicit_feedback", True),
-            )
-        return self._implicit_feedback
 
     @property
     def prompt_optimizer(self) -> PromptOptimizer:
@@ -444,6 +434,7 @@ class ResearchAgent:
 
         # 2. 使用 MemoryOptimizer 计算权重调整
         weight_delta = self.memory_optimizer.update_weight(rating)
+        memory_ids: list[int] = []
 
         # 3. 将反馈内容写入记忆（异步风格，但同步执行）
         try:
@@ -468,7 +459,7 @@ class ResearchAgent:
             "feedback_id": feedback_id,
             "rating": rating,
             "weight_delta": weight_delta,
-            "memories_stored": len(locals().get("memory_ids", [])),
+            "memories_stored": len(memory_ids),
             "message": "反馈已记录，系统将根据反馈持续优化" if rating >= HIGH_QUALITY_RATING_THRESHOLD else "反馈已记录",
         }
 
@@ -489,56 +480,309 @@ class ResearchAgent:
             logger.debug("Prompt retrieval failed: %s", e)
         return ""
 
-    # ═══════════════════════════ 对话接口 ═══════════════════════════
+    # ═══════════════════════════ 意图检测与工具编排 ═══════════════════════════
+
+    def _detect_intent(self, user_input: str) -> dict:
+        """检测用户查询是否需要数据分析或报告生成。
+
+        Returns:
+            dict: {needs_analysis, needs_report, data_type, analysis_query}
+        """
+        text = user_input.lower()
+
+        analysis_patterns = {
+            "gnss": ["gnss", "gps", "位移", "形变", "沉降", "变形", "displacement", "deformation", "settlement"],
+            "insar": ["insar", "sar", "雷达", "干涉", "radar", "interferometry"],
+            "rainfall": ["降雨", "降水", "雨量", "暴雨", "降雨量", "rainfall", "precipitation", "rain"],
+            "groundwater": ["地下水", "水位", "潜水", "地下水位", "groundwater", "water level", "ground water"],
+            "pore_pressure": ["孔压", "孔隙水", "孔隙压力", "超静孔压", "pore pressure", "pore", "porewater"],
+        }
+
+        general_analysis = [
+            "分析", "计算", "绘图", "画图", "统计", "趋势", "突变",
+            "异常检测", "滤波", "分解", "速率", "预测",
+            "analyze", "calculate", "plot", "chart", "trend", "detect",
+            "anomaly", "filter", "decompose", "velocity", "predict",
+        ]
+
+        report_indicators = [
+            "报告", "报表", "汇报", "日报", "周报", "月报", "年报",
+            "生成报告", "出报告", "导出报告",
+            "report", "daily report", "monthly report", "weekly report",
+        ]
+
+        data_type = "gnss"
+        needs_analysis = False
+
+        for dtype, keywords in analysis_patterns.items():
+            if any(kw in text for kw in keywords):
+                data_type = dtype
+                needs_analysis = True
+                break
+
+        if not needs_analysis:
+            for indicator in general_analysis:
+                if indicator in text:
+                    needs_analysis = True
+                    break
+
+        needs_report = any(indicator in text for indicator in report_indicators)
+
+        return {
+            "needs_analysis": needs_analysis,
+            "needs_report": needs_report,
+            "data_type": data_type,
+            "analysis_query": user_input,
+        }
+
+    def _format_analysis_summary(self, result: dict) -> str:
+        """将 NL2Query 分析结果格式化为结构化文本，供 LLM 理解。"""
+        if not result.get("success"):
+            err_raw = result.get("error", "") or result.get("result", {}).get("stderr", "") or result.get("result", {}).get("stdout", "")[:200]
+            if "ModuleNotFoundError" in err_raw:
+                err_display = "沙箱中缺少所需 Python 包，图表生成失败"
+            else:
+                err_display = err_raw[:200] if err_raw else "未知错误"
+            return f"分析执行失败: {err_display}"
+
+        res = result.get("result", {})
+        parts = []
+
+        stdout = res.get("stdout", "").strip()
+        if stdout:
+            parts.append(f"分析输出:\n```\n{stdout[:2000]}\n```")
+
+        data = res.get("data", {})
+        if data:
+            import json
+            parts.append(f"关键数据:\n```json\n{json.dumps(data, ensure_ascii=False, indent=2)[:2000]}\n```")
+
+        code = result.get("code", "")
+        if code:
+            parts.append(f"生成的 Python 代码:\n```python\n{code[:1000]}\n```")
+
+        figures = res.get("figures", [])
+        if figures:
+            parts.append(f"生成了 {len(figures)} 张图表")
+
+        exec_time = res.get("execution_time_ms", 0)
+        if exec_time:
+            parts.append(f"执行耗时: {int(exec_time)}ms")
+
+        return "\n\n".join(parts)
+
+    def _format_analysis_stream(self, result: dict) -> str:
+        """将分析结果格式化为面向用户的流式输出文本。"""
+        if not result.get("success"):
+            err_raw = result.get("error", "") or result.get("result", {}).get("stderr", "") or result.get("result", {}).get("stdout", "")[:200]
+            if "ModuleNotFoundError" in err_raw:
+                err_display = "沙箱中缺少所需 Python 包，图表生成失败"
+            else:
+                err_display = err_raw[:200] if err_raw else "未知错误"
+            return f"❌ 分析执行失败: {err_display}"
+
+        res = result.get("result", {})
+        lines = ["✅ **数据分析完成**\n"]
+
+        stdout = res.get("stdout", "").strip()
+        if stdout:
+            lines.append(f"**分析输出**:\n```\n{stdout[:1000]}\n```")
+
+        data = res.get("data", {})
+        if data:
+            import json
+            summary = json.dumps(data, ensure_ascii=False)[:500]
+            lines.append(f"**关键数据**: {summary}")
+
+        figures = res.get("figures", [])
+        if figures:
+            lines.append(f"📊 生成了 {len(figures)} 张图表")
+
+        return "\n".join(lines)
+
+    async def _integrated_analysis(self, query: str, data_type: str = "gnss",
+                                    generate_report: bool = False) -> dict:
+        """运行 NL2Query 分析，可选生成报告，返回格式化结果。"""
+        result = {
+            "analysis_result": None,
+            "analysis_text": "",
+            "analysis_stream": "",
+            "figures": [],
+            "report_text": "",
+            "report_stream": "",
+        }
+
+        analysis_result = await self.nl2query_execute(query=query, data_type=data_type, use_cache=True)
+        result["analysis_result"] = analysis_result
+        result["analysis_text"] = self._format_analysis_summary(analysis_result)
+        result["analysis_stream"] = self._format_analysis_stream(analysis_result)
+        result["figures"] = analysis_result.get("result", {}).get("figures", [])
+
+        # 保存图表到 uploads 目录，供前端内联显示
+        figures = result["figures"]
+        if figures:
+            import base64, uuid
+            from pathlib import Path
+            uploads_dir = Path("data") / "uploads"
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            figure_md_lines = []
+            for i, fig in enumerate(figures):
+                b64 = fig.get("b64", "")
+                if b64:
+                    try:
+                        img_bytes = base64.b64decode(b64)
+                        fig_name = f"analysis_{uuid.uuid4().hex[:8]}_{i}.png"
+                        fig_path = uploads_dir / fig_name
+                        fig_path.write_bytes(img_bytes)
+                        figure_md_lines.append(f"![图表{i+1}](/uploads/{fig_name})")
+                    except Exception:
+                        pass
+            if figure_md_lines:
+                figures_md = "\n".join(figure_md_lines)
+                result["analysis_stream"] += f"\n\n{figures_md}"
+
+        # 可选生成报告
+        if generate_report and analysis_result.get("success"):
+            report_data = {
+                "title": f"{data_type.upper()} 分析报告",
+                "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "query": query,
+            }
+            result_data = analysis_result.get("result", {})
+            if result_data:
+                report_data["analysis"] = result_data
+                report_data["stdout"] = result_data.get("stdout", "")
+                report_data["data"] = result_data.get("data", {})
+
+            try:
+                report_path = await self._react_tool_generate_report(report_type="daily", data=report_data)
+                report_path_str = str(report_path)
+                result["report_text"] = f"报告已生成: {report_path_str}"
+                result["report_stream"] = f"✅ **报告已生成**: [{report_path_str}]({report_path_str})\n\n"
+            except Exception as e:
+                logger.warning("Report generation failed: %s", e)
+                result["report_text"] = f"报告生成失败: {e}"
+
+        return result
+
+    # ═══════════════════════════ 对话接口（增强版） ═══════════════════════════
 
     async def chat(self, user_input: str, attachments: list[dict] | None = None) -> ModelResponse:
-        """处理用户对话，整合记忆上下文。"""
+        """处理用户对话，整合记忆、知识库、数据分析、报告生成。"""
         llm = await self._get_llm()
         multimodal_parts = _process_attachments(attachments)
         self.messages.append(Message(role="user", content=user_input, multimodal_parts=multimodal_parts))
-        memory_context = await self._recall_memories(user_input)
-        rag_context = await self._retrieve_context(user_input)
-        # Record implicit feedback signals
         self.implicit_feedback.record_query(self.session_id, user_input, self.user_id)
+
+        # 1. 记忆召回
+        memory_context = await self._recall_memories(user_input)
+
+        # 2. RAG 知识库检索
+        rag_context = await self._retrieve_context(user_input)
+
+        # 3. 意图检测
+        intent = self._detect_intent(user_input)
+
+        # 4. 构建上下文容器
         context_parts = []
         if memory_context:
-            context_parts.append(f"[记忆]\n{memory_context}")
+            context_parts.append(f"## 相关记忆\n{memory_context}")
         if rag_context:
-            context_parts.append(f"[知识]\n{rag_context}")
+            context_parts.append(f"## 知识库相关信息\n{rag_context}")
+
+        # 5. 执行集成分析（含报告生成）
+        if intent["needs_analysis"] or intent["needs_report"]:
+            try:
+                integrated = await self._integrated_analysis(
+                    query=intent["analysis_query"],
+                    data_type=intent["data_type"],
+                    generate_report=intent["needs_report"],
+                )
+                if integrated["analysis_text"]:
+                    context_parts.append(f"## 数据分析结果\n{integrated["analysis_text"]}")
+                if integrated["report_text"]:
+                    context_parts.append(f"## 报告信息\n{integrated["report_text"]}")
+            except Exception as e:
+                logger.exception("Integrated analysis failed")
+                context_parts.append(f"## 分析过程异常\n{e}")
+
+        # 6. 调用 LLM
         if context_parts:
             combined = "\n\n".join(context_parts)
             self.messages.append(Message(role="system", content=combined))
+
         response = await llm.chat(self.messages)
         self.messages.append(response)
+
+        # 7. 记忆提取
         extraction_llm = await self._get_extraction_llm()
         if extraction_llm:
             await self._extract_and_store_memories(user_input, response.content)
+
         return response
 
     async def stream_chat(self, user_input: str, attachments: list[dict] | None = None) -> AsyncIterator[str]:
-        """流式对话，逐 token 产出。"""
+        """流式对话，整合记忆、知识库、数据分析、报告生成，逐 token 产出。"""
         llm = await self._get_llm()
         multimodal_parts = _process_attachments(attachments)
         self.messages.append(Message(role="user", content=user_input, multimodal_parts=multimodal_parts))
+        self.implicit_feedback.record_query(self.session_id, user_input, self.user_id)
+
+        # 1. 记忆召回
         memory_context = await self._recall_memories(user_input)
+
+        # 2. RAG 知识库检索
         rag_context = await self._retrieve_context(user_input)
+
+        # 3. 意图检测
+        intent = self._detect_intent(user_input)
+
         context_parts = []
         if memory_context:
-            context_parts.append(f"[记忆]\n{memory_context}")
+            context_parts.append(f"## 相关记忆\n{memory_context}")
         if rag_context:
-            context_parts.append(f"[知识]\n{rag_context}")
+            context_parts.append(f"## 知识库相关信息\n{rag_context}")
+
+        # 4. 执行集成分析
+        if intent["needs_analysis"]:
+            yield "⏳ **正在分析数据...**\n\n"
+            try:
+                integrated = await self._integrated_analysis(
+                    query=intent["analysis_query"],
+                    data_type=intent["data_type"],
+                    generate_report=intent["needs_report"],
+                )
+                if integrated["analysis_text"]:
+                    context_parts.append(f"## 数据分析结果\n{integrated["analysis_text"]}")
+                if integrated["analysis_stream"]:
+                    yield integrated["analysis_stream"]
+                    yield "\n\n"
+                if integrated["report_text"]:
+                    context_parts.append(f"## 报告信息\n{integrated["report_text"]}")
+                if integrated["report_stream"]:
+                    yield integrated["report_stream"]
+                    yield "\n\n"
+            except Exception as e:
+                logger.exception("Integrated analysis failed")
+                yield f"⚠️ 分析过程出错: {e}\n\n"
+                context_parts.append(f"## 分析过程异常\n{e}")
+
+        # 5. 调用 LLM 生成最终回复
         if context_parts:
             combined = "\n\n".join(context_parts)
             self.messages.append(Message(role="system", content=combined))
+
         full_content = ""
         async for chunk in llm.stream_chat(self.messages):
             full_content += chunk
             yield chunk
+
         self.messages.append(Message(role="assistant", content=full_content))
+
+        # 6. 记忆提取
         extraction_llm = await self._get_extraction_llm()
         if extraction_llm:
             await self._extract_and_store_memories(user_input, full_content)
-
     def load_history(self, messages: list[dict]) -> None:
         """Load historical messages into the agent's conversation context.
 

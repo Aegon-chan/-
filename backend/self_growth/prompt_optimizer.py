@@ -1,4 +1,4 @@
-﻿"""Prompt auto-optimization module (APE + version management)."""
+"""Prompt auto-optimization module (APE + version management)."""
 from __future__ import annotations
 
 import json

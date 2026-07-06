@@ -710,8 +710,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 async def _on_upload(e):
                     try:
-                        file_content = await e.file.read() if hasattr(e, "file") else e.content.read()
-                        file_name = getattr(e.file, 'name', '') or getattr(e, 'name', '') or "file"
+                        file_content = await e.file.read()
+                        file_name = e.file.name or "file"
                         resp = requests.post(
                             f"{_BACKEND_URL}/api/v1/upload/upload",
                             files={"file": (file_name, file_content)},
@@ -1243,13 +1243,13 @@ def knowledge_page():
 async def _do_upload(e, result_label) -> None:
     try:
         from backend.retrieval.vector_store import get_vector_store, VectorStore
-        raw = e.content.read()
-        content = VectorStore.extract_text_from_bytes(raw, filename=e.name or "")
+        raw = await e.file.read()
+        content = VectorStore.extract_text_from_bytes(raw, filename=e.file.name or "")
         store = get_vector_store()
         from datetime import datetime
-        doc_id = f"doc_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{e.name}"
-        await store.add_document(doc_id=doc_id, content=content, metadata={"filename": e.name})
-        result_label.set_text(f"✓ 上传成功: {e.name} ({len(content)} 字符)")
+        doc_id = f"doc_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{e.file.name}"
+        await store.add_document(doc_id=doc_id, content=content, metadata={"filename": e.file.name})
+        result_label.set_text(f"✓ 上传成功: {e.file.name} ({len(content)} 字符)")
         result_label.classes("text-green-500")
     except Exception as ex:
         result_label.set_text(f"✗ 上传失败: {ex}")
