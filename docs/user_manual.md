@@ -425,7 +425,7 @@ OPENAI_API_BASE=https://api.openai.com/v1
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/v1/models/` | 获取已注册模型列表 |
+| GET | `/api/v1 |/models/` | 获取已注册模型列表
 | POST | `/api/v1/models/switch` | 切换当前模型 |
 
 ### 6.5 数据分析

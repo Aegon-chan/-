@@ -62,6 +62,23 @@ async def lifespan(app: FastAPI):
         logger.warning("Could not create default user: %s", _ue)
 
 
+    # Initialize monitoring database
+    try:
+        from backend.db.monitoring_session import init_monitoring_db
+        await init_monitoring_db()
+        logger.info("Monitoring database initialized")
+    except Exception as e:
+        logger.warning("Monitoring database init failed: %s", e)
+
+    # Seed monitoring data if empty
+    if settings.monitoring_seed_on_startup:
+        try:
+            from scripts.seed_monitoring_data import seed_monitoring_data
+            stats = seed_monitoring_data()
+            logger.info("Monitoring seed data: %s", stats)
+        except Exception as e:
+            logger.warning("Monitoring seed data failed: %s", e)
+
     logger.info("Research Agent 启动完成: env=%s", settings.app_env)
     yield
 
@@ -155,6 +172,10 @@ async def global_exception_handler(request: Request, exc: Exception):
 from backend.api import router as api_router
 
 app.include_router(api_router, prefix="/api/v1")
+
+# --- Monitoring data routes ---
+from backend.api.monitoring import router as monitoring_router
+app.include_router(monitoring_router, prefix="/api/v1/monitoring")
 
 # --- Static file serving for uploads ---
 import os as _os

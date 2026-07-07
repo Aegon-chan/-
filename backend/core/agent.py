@@ -308,7 +308,9 @@ class ResearchAgent:
                 feedbacks = self.feedback_collector.get_feedback_by_user(self.user_id, limit=200)
                 training_data = self.feedback_collector.to_training_data(min_rating=HIGH_QUALITY_RATING_THRESHOLD)
                 if len(training_data) >= FINETUNE_AUTO_TRIGGER_COUNT:
-                    dataset_path = self.fine_tuner.prepare_dataset(training_data)
+                    import asyncio
+
+                    dataset_path = asyncio.run(self.fine_tuner.prepare_dataset(training_data))
                     logger.info("Auto-trigger fine-tuning: %d samples (user=%s)",
                                 len(training_data), self.user_id)
         except Exception as e:
@@ -511,6 +513,14 @@ class ResearchAgent:
             "report", "daily report", "monthly report", "weekly report",
         ]
 
+        data_query_indicators = [
+            "查一下", "查查", "查看", "显示", "展示",
+            "最近", "最新", "今天", "昨天", "这个月", "上个月",
+            "统计", "多少", "范围", "最大", "最小", "平均",
+            "数据", "监测数据", "查询", "读数是", "是多少",
+        ]
+
+
         data_type = "gnss"
         needs_analysis = False
 
@@ -528,10 +538,16 @@ class ResearchAgent:
 
         needs_report = any(indicator in text for indicator in report_indicators)
 
+        needs_data_query = any(indicator in text for indicator in data_query_indicators)
+
+        # If data query detected but no analysis type matched, still mark as data query
+        if needs_data_query and not needs_analysis:
+            needs_analysis = True  # Trigger analysis path for data display
+
         return {
             "needs_analysis": needs_analysis,
             "needs_report": needs_report,
-            "data_type": data_type,
+            "needs_data_query": needs_data_query,
             "analysis_query": user_input,
         }
 
@@ -667,12 +683,56 @@ class ResearchAgent:
 
     # ═══════════════════════════ 对话接口（增强版） ═══════════════════════════
 
+
+    # ============================================================
+    # 监测数据库查询
+    # ============================================================
+
+    async def _query_monitoring_data(self, data_type: str = "groundwater", query: str = "") -> str:
+        """查询监测数据库，返回结构化文本供 LLM 使用。"""
+        try:
+            from backend.analysis.monitoring_service import (
+                get_latest as svc_get_latest,
+                get_summary as svc_get_summary,
+                query_measurements,
+            )
+            from backend.db.monitoring_session import AsyncSessionLocal
+
+            async with AsyncSessionLocal() as db:
+                # Try latest data first
+                latest = await svc_get_latest(db, data_type)
+                if latest.get("success") and latest.get("records"):
+                    records = latest["records"]
+                    lines = [
+                        f"数据类型: {data_type}",
+                        f"站点数: {len(records)}",
+                    ]
+                    for r in records[:10]:
+                        station = r.get("station_code", r.get("station_id", ""))
+                        time_val = r.get("measurement_time", "")
+                        vals = "; ".join(f"{k}={v}" for k, v in r.get("values", {}).items())
+                        lines.append(f"  - {station} ({time_val}): {vals}")
+                    return "\n".join(lines)
+
+                # If no latest data, try summary
+                summary = await svc_get_summary(db, data_type)
+                if summary.get("success"):
+                    return (
+                        f"数据类型: {data_type}\n"
+                        f"总记录数: {summary.get("total_records", 0)}\n"
+                        f"站点数: {summary.get("station_count", 0)}\n"
+                        f"时间范围: {summary.get("time_range", {}).get("start", "")} ~ {summary.get("time_range", {}).get("end", "")}"
+                    )
+
+            return f"监测数据库中没有 {data_type} 类型的数据"
+        except ImportError:
+            return "(监测数据库模块未加载)"
+        except Exception as e:
+            return f"(查询监测数据出错: {e})"
+
     async def chat(self, user_input: str, attachments: list[dict] | None = None) -> ModelResponse:
         """处理用户对话，整合记忆、知识库、数据分析、报告生成。"""
         llm = await self._get_llm()
-        multimodal_parts = _process_attachments(attachments)
-        self.messages.append(Message(role="user", content=user_input, multimodal_parts=multimodal_parts))
-        self.implicit_feedback.record_query(self.session_id, user_input, self.user_id)
 
         # 1. 记忆召回
         memory_context = await self._recall_memories(user_input)
@@ -683,12 +743,12 @@ class ResearchAgent:
         # 3. 意图检测
         intent = self._detect_intent(user_input)
 
-        # 4. 构建上下文容器
+        # 4. 构建上下文
         context_parts = []
         if memory_context:
-            context_parts.append(f"## 相关记忆\n{memory_context}")
+            context_parts.append(f"## 用户长期记忆\\n{memory_context}")
         if rag_context:
-            context_parts.append(f"## 知识库相关信息\n{rag_context}")
+            context_parts.append(f"## 知识库参考内容\\n{rag_context}")
 
         # 5. 执行集成分析（含报告生成）
         if intent["needs_analysis"] or intent["needs_report"]:
@@ -706,10 +766,23 @@ class ResearchAgent:
                 logger.exception("Integrated analysis failed")
                 context_parts.append(f"## 分析过程异常\n{e}")
 
-        # 6. 调用 LLM
+        # 6. 插入上下文系统消息（在用户消息之前），然后添加用户消息
+        system_msg_content = None
         if context_parts:
-            combined = "\n\n".join(context_parts)
-            self.messages.append(Message(role="system", content=combined))
+            instructions = (
+                "请严格依据以下知识库内容和用户记忆来回答问题。\n"
+                "如果提供的参考信息与问题相关，请优先使用参考信息作答；"
+                "如果参考信息不相关或不足，则忽略它们并基于自身知识正常回答。\n"
+            )
+            system_msg_content = instructions + "\n\n" + "\n\n".join(context_parts)
+
+        multimodal_parts = _process_attachments(attachments)
+        self.messages.append(Message(role="user", content=user_input, multimodal_parts=multimodal_parts))
+        self.implicit_feedback.record_query(self.session_id, user_input, self.user_id)
+
+        if system_msg_content:
+            self.messages.insert(0, Message(role="system", content=system_msg_content))
+
 
         response = await llm.chat(self.messages)
         self.messages.append(response)
@@ -724,9 +797,6 @@ class ResearchAgent:
     async def stream_chat(self, user_input: str, attachments: list[dict] | None = None) -> AsyncIterator[str]:
         """流式对话，整合记忆、知识库、数据分析、报告生成，逐 token 产出。"""
         llm = await self._get_llm()
-        multimodal_parts = _process_attachments(attachments)
-        self.messages.append(Message(role="user", content=user_input, multimodal_parts=multimodal_parts))
-        self.implicit_feedback.record_query(self.session_id, user_input, self.user_id)
 
         # 1. 记忆召回
         memory_context = await self._recall_memories(user_input)
@@ -739,11 +809,21 @@ class ResearchAgent:
 
         context_parts = []
         if memory_context:
-            context_parts.append(f"## 相关记忆\n{memory_context}")
+            context_parts.append(f"## 用户长期记忆\\n{memory_context}")
         if rag_context:
-            context_parts.append(f"## 知识库相关信息\n{rag_context}")
+            context_parts.append(f"## 知识库参考内容\\n{rag_context}")
 
         # 4. 执行集成分析
+
+        # 4a. 监测数据库查询
+        if intent.get("needs_data_query"):
+            monitoring_context = await self._query_monitoring_data(
+                data_type=intent.get("data_type", "groundwater"),
+                query=intent.get("analysis_query", ""),
+            )
+            if monitoring_context:
+                context_parts.append(f"## 监测数据库查询结果\n{monitoring_context}")
+
         if intent["needs_analysis"]:
             yield "⏳ **正在分析数据...**\n\n"
             try:
@@ -767,10 +847,23 @@ class ResearchAgent:
                 yield f"⚠️ 分析过程出错: {e}\n\n"
                 context_parts.append(f"## 分析过程异常\n{e}")
 
-        # 5. 调用 LLM 生成最终回复
+        # 5. 插入上下文系统消息（在用户消息之前），然后流式调用 LLM
+        system_msg_content = None
         if context_parts:
-            combined = "\n\n".join(context_parts)
-            self.messages.append(Message(role="system", content=combined))
+            instructions = (
+                "请严格依据以下知识库内容和用户记忆来回答问题。\n"
+                "如果提供的参考信息与问题相关，请优先使用参考信息作答；"
+                "如果参考信息不相关或不足，则忽略它们并基于自身知识正常回答。\n"
+            )
+            system_msg_content = instructions + "\n\n" + "\n\n".join(context_parts)
+
+        multimodal_parts = _process_attachments(attachments)
+        self.messages.append(Message(role="user", content=user_input, multimodal_parts=multimodal_parts))
+        self.implicit_feedback.record_query(self.session_id, user_input, self.user_id)
+
+        if system_msg_content:
+            self.messages.insert(0, Message(role="system", content=system_msg_content))
+
 
         full_content = ""
         async for chunk in llm.stream_chat(self.messages):
@@ -797,29 +890,43 @@ class ResearchAgent:
                 self.messages.append(LLMMessage(role=role, content=content))
 
     # ═══════════════════════════ NL2Query 接口 ═══════════════════════════
-
-    async def nl2query_code(self, query: str, data_type: str = "gnss", data_description: str = "") -> dict:
+    async def nl2query_code(self, query: str, data_type: str = "gnss", data_description: str = "",
+                          file_id: str = "", data_schema: Optional[dict] = None) -> dict:
         from backend.analysis.codegen import generate_code
-        return await generate_code(query, data_type, data_description, model_id=self.model_id)
-
-    async def nl2query_execute(self, query: str, data_type: str = "gnss", data_description: str = "", use_cache: bool = True) -> dict:
+        return await generate_code(query, data_type, data_description, self.model_id, data_schema)
+    async def nl2query_execute(self, query: str, data_type: str = "gnss", data_description: str = "",
+                               file_id: str = "", use_cache: bool = True) -> dict:
+        from backend.analysis.codegen import generate_code
         from backend.core.sandbox import CodeSandbox
         from backend.analysis.cache import QueryCache
-        if use_cache:
+
+        # Load data if a file was specified
+        df = None
+        data_schema = None
+        sandbox_context = None
+        if file_id:
+            from backend.analysis.data_loader import load_data_for_analysis, dataframe_to_sandbox_context
+            df, data_schema, err = load_data_for_analysis(file_id)
+            if err:
+                return {"success": False, "code": "", "result": {}, "error": f"数据读取失败: {err}"}
+            if df is not None:
+                sandbox_context = dataframe_to_sandbox_context(df)
+
+        if use_cache and not sandbox_context:
             cache = QueryCache()
             cached = cache.get(query, data_type)
             if cached is not None:
                 logger.info("NL2Query cache hit: %s...", query[:50])
                 return {"success": True, "from_cache": True, "code": cached.get("code", ""), "result": cached.get("result", {})}
-        gen_result = await self.nl2query_code(query, data_type, data_description)
+        gen_result = await self.nl2query_code(query, data_type, data_description, file_id, data_schema)
         if not gen_result["success"]:
             return gen_result
         code = gen_result["code"]
         sandbox = CodeSandbox(timeout=30)
         try:
-            exec_result = sandbox.execute_python(code)
+            exec_result = sandbox.execute_python(code, context=sandbox_context)
             output = exec_result.to_dict()
-            if use_cache and exec_result.success:
+            if use_cache and exec_result.success and not sandbox_context:
                 cache = QueryCache()
                 cache.set(query, data_type, code, output)
             return {"success": exec_result.success, "from_cache": False, "code": code, "result": output}
@@ -835,8 +942,8 @@ class ResearchAgent:
             results = await store.search(query, top_k=3)
             if results:
                 return "\n---\n".join(r["content"] for r in results)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Knowledge base retrieval failed: %s", e)
         return ""
 
     # ═══════════════════════════ 工具方法 ═══════════════════════════

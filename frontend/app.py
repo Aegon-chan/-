@@ -1,4 +1,4 @@
-﻿"""
+"""
 NiceGUI 前端应用入口
 
 直接调用后端 Python 模块，实现：
@@ -518,6 +518,7 @@ def _drawer():
                     ("Knowledge", "/knowledge", "library_books"),
                     ("Memory", "/memories", "psychology"),
                     ("Settings", "/settings", "settings"),
+                    ("Database", "/database", "storage"),
                 ]
                 for label, path, icon in nav_items:
                     ui.button(label, icon=icon, on_click=lambda p=path: ui.navigate.to(p)
@@ -1492,6 +1493,251 @@ def memories_page():
 
 
 # ═══════════════════════════ 启动入口 ═══════════════════════════
+
+
+@ui.page("/database")
+def database_page():
+    _ensure_layout_css()
+    _drawer()
+    _header("Database Manager")
+
+    with ui.column().classes("w-full max-w-6xl mx-auto p-4 gap-4"):
+        ui.markdown("## Database Manager")
+        ui.label("Browse, query, and manage database tables directly from the frontend.").classes("text-sm text-gray-500 mb-2")
+
+        # Stats row
+        stats_row = ui.row().classes("w-full gap-3 mb-1")
+        main_db_card = ui.card().classes("p-3 flex-1")
+        mon_db_card = ui.card().classes("p-3 flex-1")
+
+        # Table list area
+        table_list = ui.column().classes("w-full gap-2")
+        current_db_filter = {"value": "all"}
+
+        def fetch_table_list():
+            table_list.clear()
+            try:
+                import requests as _req
+                resp = _req.get(f"{_BACKEND_URL}/api/v1/db/tables", timeout=10)
+                if resp.status_code != 200:
+                    with table_list:
+                        ui.label(f"Failed to fetch tables: {resp.status_code}").classes("text-red-500")
+                    return
+                data = resp.json()
+                tables = data.get("tables", [])
+
+                main_stats = [t for t in tables if t["database"] == "main"]
+                mon_stats = [t for t in tables if t["database"] == "monitoring"]
+                main_db_card.clear()
+                with main_db_card:
+                    ui.label("Main DB").classes("text-sm font-bold")
+                    ui.label(f"{len(main_stats)} tables | {sum(t["row_count"] for t in main_stats)} rows").classes("text-xs")
+                mon_db_card.clear()
+                with mon_db_card:
+                    ui.label("Monitoring DB").classes("text-sm font-bold")
+                    ui.label(f"{len(mon_stats)} tables | {sum(t["row_count"] for t in mon_stats)} rows").classes("text-xs")
+
+                db_filter = current_db_filter["value"]
+                filtered = tables if db_filter == "all" else [t for t in tables if t["database"] == db_filter]
+
+                for t_info in filtered:
+                    with table_list:
+                        with ui.card().props("flat bordered").classes("w-full p-1"):
+                            with ui.row().classes("items-center w-full gap-3 cursor-pointer"):
+                                db_badge = "M" if t_info["database"] == "main" else "MON"
+                                ui.label(db_badge).classes("text-xs font-mono bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded")
+                                ui.label(t_info["name"]).classes("text-sm font-mono font-bold flex-1")
+                                ui.label(f"{t_info['row_count']} rows").classes("text-xs text-gray-500")
+                                ui.button("Browse", icon="table_rows",
+                                         on_click=lambda t=t_info["name"], d=t_info["database"]: open_table_browser(d, t)
+                                         ).props("flat dense size=sm color=primary")
+            except Exception as e:
+                with table_list:
+                    ui.label(f"Error: {e}").classes("text-red-500")
+
+        with ui.row().classes("items-center gap-2"):
+            ui.label("Filter:").classes("text-sm")
+            for label, val in [("All", "all"), ("Main DB", "main"), ("Monitoring DB", "monitoring")]:
+                ui.button(label, on_click=lambda v=val: set_filter(v)).props("flat dense size=sm")
+
+        def set_filter(val):
+            current_db_filter["value"] = val
+            fetch_table_list()
+
+        ui.button("Refresh Table List", icon="refresh", on_click=fetch_table_list).props("flat color=primary")
+        ui.timer(0.3, fetch_table_list, once=True)
+
+        ui.separator().classes("my-2")
+        ui.markdown("### Table Browser")
+
+        browser_db = ui.select(label="Database", options={"main": "Main", "monitoring": "Monitoring"}, value="main").classes("w-44")
+        browser_table = ui.select(label="Table", options=[], value=None).classes("w-64")
+
+        def populate_table_options():
+            try:
+                import requests as _req
+                resp = _req.get(f"{_BACKEND_URL}/api/v1/db/tables", timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    opts = [t["name"] for t in data.get("tables", []) if t["database"] == browser_db.value]
+                    browser_table.set_options(opts)
+                    if opts:
+                        browser_table.value = opts[0]
+            except Exception:
+                pass
+
+        def on_db_change():
+            populate_table_options()
+
+        browser_db.on_value_change(on_db_change)
+        ui.button("Load Tables", icon="cloud_download", on_click=populate_table_options).props("flat size=sm")
+        ui.timer(0.5, populate_table_options, once=True)
+        search_input = ui.input(placeholder="Search rows...").classes("w-64").props("clearable")
+
+        data_area = ui.column().classes("w-full gap-1 overflow-auto")
+        pagination_row = ui.row().classes("items-center gap-2")
+        current_page = {"value": 1}
+
+        def load_table_data():
+            data_area.clear()
+            table = browser_table.value
+            db = browser_db.value
+            if not table:
+                with data_area:
+                    ui.label("Select a table above and click Load.").classes("text-gray-400 text-sm")
+                return
+            import requests as _req
+            try:
+                params = {"page": current_page["value"], "page_size": 50}
+                if search_input.value:
+                    params["search"] = search_input.value
+                resp = _req.get(f"{_BACKEND_URL}/api/v1/db/{db}/{table}", params=params, timeout=10)
+                if resp.status_code != 200:
+                    ui.notify(f"Error: {resp.text}", type="error")
+                    return
+                data = resp.json()
+                cols = data.get("columns", [])
+                rows = data.get("rows", [])
+                total = data.get("total", 0)
+                page = data.get("page", 1)
+                page_sz = data.get("page_size", 50)
+
+                pagination_row.clear()
+                with pagination_row:
+                    total_pages = max(1, (total + page_sz - 1) // page_sz)
+                    ui.label(f"Total: {total} rows | Page {page} of {total_pages}").classes("text-sm text-gray-500")
+                    if page > 1:
+                        ui.button("Prev", icon="chevron_left", on_click=lambda: change_page(page - 1)).props("flat dense size=sm")
+                    if page * page_sz < total:
+                        ui.button("Next", icon="chevron_right", on_click=lambda: change_page(page + 1)).props("flat dense size=sm")
+
+                if not rows:
+                    with data_area:
+                        ui.label("(No data)").classes("text-gray-400 text-sm")
+                    return
+
+                col_keys = [c["name"] for c in cols]
+                table_data = [{c["name"]: str(row.get(c["name"], "")) for c in cols} for row in rows]
+
+                pk_name = None
+                for c in cols:
+                    if c.get("primary_key"):
+                        pk_name = c["name"]
+                        break
+
+                with data_area:
+                    col_defs = [{"name": c["name"], "label": c["name"], "field": c["name"], "sortable": True, "align": "left"} for c in cols]
+                    ui.table(
+                        rows=table_data,
+                        columns=col_defs,
+                    ).classes("w-full text-xs").props("flat dense virtual-scroll")
+
+                    if pk_name:
+                        ui.label("Delete row by ID:").classes("text-xs text-gray-500 mt-1")
+                        delete_id_input = ui.input(placeholder=f"Enter {pk_name}").classes("w-64")
+                        def delete_selected_row():
+                            rid = delete_id_input.value.strip()
+                            if not rid:
+                                ui.notify("Enter a row ID", type="warning")
+                                return
+                            import requests as _req_del
+                            try:
+                                del_resp = _req_del.delete(f"{_BACKEND_URL}/api/v1/db/{db}/{table}/{rid}", timeout=10)
+                                if del_resp.status_code == 200:
+                                    ui.notify(f"Row {rid} deleted", type="positive")
+                                    load_table_data()
+                                else:
+                                    ui.notify(f"Delete failed: {del_resp.text}", type="error")
+                            except Exception as e:
+                                ui.notify(f"Error: {e}", type="error")
+                        ui.button("Delete Selected Row", icon="delete", on_click=delete_selected_row).props("flat dense color=red size=sm")
+            except Exception as e:
+                with data_area:
+                    ui.label(f"Error loading data: {e}").classes("text-red-500")
+
+        def change_page(page):
+            current_page["value"] = page
+            load_table_data()
+
+        ui.button("Load Data", icon="cloud_download", on_click=lambda: (current_page.update({"value": 1}), load_table_data())[1]).props("flat color=primary")
+
+        # SQL Query
+        ui.separator().classes("my-2")
+        ui.markdown("### SQL Query")
+        ui.label("Run read-only SELECT queries against either database.").classes("text-sm text-gray-500")
+        query_db = ui.select(label="Database", options={"main": "Main", "monitoring": "Monitoring"}, value="main").classes("w-44")
+        query_input = ui.textarea(label="SQL Query (SELECT only)", placeholder="SELECT * FROM sessions LIMIT 10").classes("w-full font-mono text-sm").props("outlined rows=4")
+        query_result_area = ui.column().classes("w-full gap-1 overflow-auto")
+
+        def run_query():
+            query_result_area.clear()
+            sql = query_input.value.strip()
+            if not sql:
+                ui.notify("Enter a SQL query", type="warning")
+                return
+            import requests as _req_q
+            try:
+                resp = _req_q.post(f"{_BACKEND_URL}/api/v1/db/query", json={"sql": sql, "database": query_db.value}, timeout=30)
+                if resp.status_code != 200:
+                    with query_result_area:
+                        ui.label(f"Query failed: {resp.text}").classes("text-red-500 text-sm")
+                    return
+                data = resp.json()
+                cols = data.get("columns", [])
+                rows = data.get("rows", [])
+                if not rows:
+                    with query_result_area:
+                        ui.label("(No results)").classes("text-gray-400 text-sm")
+                    return
+                table_data = []
+                for row in rows:
+                    row_obj = {}
+                    for i, col in enumerate(cols):
+                        row_obj[col] = str(row[i]) if i < len(row) else ""
+                    table_data.append(row_obj)
+                with query_result_area:
+                    ui.label(f"Result: {data.get('row_count', len(rows))} rows, {len(cols)} columns").classes("text-xs text-gray-500 mb-1")
+                    ui.table({
+                        "columns": [{"name": c, "label": c, "field": c, "sortable": True, "align": "left"} for c in cols],
+                        "rows": table_data,
+                    }).classes("w-full text-xs").props("flat dense virtual-scroll")
+            except Exception as e:
+                with query_result_area:
+                    ui.label(f"Error: {e}").classes("text-red-500 text-sm")
+
+        with ui.row().classes("gap-2"):
+            ui.button("Run Query", icon="play_arrow", on_click=run_query).props("flat color=primary")
+            ui.button("Clear Results", icon="clear", on_click=lambda: query_result_area.clear()).props("flat")
+
+        ui.separator().classes("my-2")
+        ui.markdown("> **Safety**: Only SELECT queries are allowed. DELETE operations are restricted to single-row deletion by primary key.").classes("text-xs text-gray-400")
+
+
+    def open_table_browser(db, table):
+        browser_db.value = db
+        browser_table.value = table
+        current_page["value"] = 1
+        load_table_data()
 
 
 def run():

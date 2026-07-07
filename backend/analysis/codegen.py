@@ -19,63 +19,32 @@ logger = logging.getLogger("research_agent.codegen")
 
 CODEGEN_SYSTEM_PROMPT = """你是一位专业的地质灾害监测数据分析专家。你的任务是将用户的自然语言查询转换成可执行的 Python 代码。
 
-## 可用的分析模块
+## 重要规则
 
-```python
-# GNSS 位移分析 (backend.analysis.gnss)
-from backend.analysis.gnss import (
-    decompose_timeseries,     # 时间序列分解: 趋势 + 季节 + 残差
-    detect_step,              # 阶跃突变检测: 滑动窗口 t 检验
-    estimate_velocity,        # 形变速率估计: 线性回归
-    outlier_detection,        # 异常值检测: IQR / Z-Score
-    signal_filter,            # 信号滤波: 移动平均 / Savitzky-Golay
-)
-
-# InSAR 形变分析 (backend.analysis.insar)
-from backend.analysis.insar import (
-    interpolate_deformation,   # 形变场插值: Kriging / IDW
-    cumulative_displacement,   # 累积形变计算
-    deformation_velocity,      # 形变速率图
-)
-
-# 降雨分析 (backend.analysis.rainfall)
-from backend.analysis.rainfall import (
-    cumulative_rainfall,       # 累计降雨量
-    rainfall_intensity,        # 降雨强度分析
-    return_period,             # 重现期估算: Gumbel / P-III
-)
-
-# 地下水位分析 (backend.analysis.groundwater)
-from backend.analysis.groundwater import (
-    water_level_dynamics,      # 水位动态曲线
-    rainfall_correlation,      # 降雨相关性分析
-)
-
-# 孔压分析 (backend.analysis.pore_pressure)
-from backend.analysis.pore_pressure import (
-    pore_pressure_trend,       # 孔压变化趋势
-    excess_pore_pressure,      # 超静孔压消散分析
-)
-```
-
-## 代码生成规则
-
-1. **始终先生成示例数据**（如果未提供数据），使用 numpy/pandas 构造合理的模拟数据。
-2. **使用 matplotlib 绘图**，调用 `_save_fig()` 保存每个图表。
-3. **将结果存入 `_results["_data"]`** 字典，key 为可读的描述性名称。
-4. **打印关键结果**到 stdout（print）。
-5. **只使用白名单中的库**: numpy, pandas, scipy, statsmodels, matplotlib, sklearn。
-6. **不要执行文件 I/O 或网络请求**。
-7. **添加足够的中文注释**解释每步操作。
-8. **生成的代码应该是自包含的**，可以直接执行。
+1. **数据已预加载**: 如果有用户选择的数据文件，沙箱内已有变量 `df`（list of dicts，当做行列表处理），以及 `_col_names`（列名列表）、`_col_dtypes`（列类型字典）、`_row_count`（行数）。
+   → 在代码开头将 df 转为 DataFrame: `df = pd.DataFrame(df)`
+   → **不要尝试加载或读取任何文件** — 数据已在内存中。
+2. **不要使用 from backend.analysis 导入** -- 这些模块在沙箱中不可用。
+2. **不要重新定义 _results** -- _results 字典已由沙箱初始化，直接用 _results['_data']['key'] = value 存储结果。
+3. **不要重新定义 _save_fig** -- _save_fig() 已由沙箱提供，直接调用 _save_fig('chart_name') 保存图表。
+4. **只使用白名单中的库**: numpy, pandas, scipy, statsmodels, matplotlib, sklearn。
+5. **不要执行文件 I/O 或网络请求**。
+6. **使用 matplotlib 绘图**，调用 _save_fig() 保存每个生成的图表。
+7. **将数值结果存入 _results['_data']** 字典，key 为可读的描述性名称。
+8. **打印关键结果**到 stdout（print）。
+9. **生成的代码应该是自包含的**，可以直接执行。
+11. **添加足够的中文注释**解释每步操作。
 
 ## 输出格式
-只输出纯 Python 代码，用 ```python 标记包围。代码中不要包含任何解释性文字。
+只输出纯 Python 代码，用 `python 标记包围。代码中不要包含任何解释性文字。
 """
 
-
-def build_generation_prompt(query: str, data_type: str = "gnss",
-                            data_description: str = "") -> list[Message]:
+def build_generation_prompt(
+    query: str,
+    data_type: str = "gnss",
+    data_description: str = "",
+    data_schema: Optional[dict] = None,
+) -> list[Message]:
     """Build the message list for code generation.
 
     Parameters
@@ -86,6 +55,8 @@ def build_generation_prompt(query: str, data_type: str = "gnss",
         Type of monitoring data (gnss, insar, rainfall, groundwater, pore_pressure).
     data_description : str
         Optional description of available data columns and formats.
+    data_schema : dict, optional
+        Schema info extracted from actual data (column names, types, sample rows).
 
     Returns
     -------
@@ -94,6 +65,22 @@ def build_generation_prompt(query: str, data_type: str = "gnss",
     user_content = f"数据类型: {data_type}\n"
     if data_description:
         user_content += f"数据描述: {data_description}\n"
+    if data_schema and data_schema.get("column_names"):
+        user_content += "\n[Available Data Schema]\n"
+        user_content += data_schema.get("data_description_text", "") + "\n"
+        user_content += (
+            "\nData is pre-loaded as variable ``df`` (list of dicts) in the sandbox. "
+            "Convert it at the start of your code:\n"
+            "  df = pd.DataFrame(df)\n"
+            "Then analyze df directly. Do NOT load data from any file.\n"
+        )
+    else:
+        user_content += (
+            "\nNote: No actual data file provided. "
+            "If your analysis requires real data, generate illustrative/sample code "
+            "that the user can adapt with their own data.\n"
+        )
+
     user_content += f"分析需求: {query}\n"
     user_content += (
         "\n请生成完整的 Python 代码来完成上述分析。"
@@ -142,9 +129,13 @@ def validate_generated_code(code: str) -> tuple[bool, str]:
     return True, ""
 
 
-async def generate_code(query: str, data_type: str = "gnss",
-                        data_description: str = "",
-                        model_id: Optional[str] = None) -> dict:
+async def generate_code(
+    query: str,
+    data_type: str = "gnss",
+    data_description: str = "",
+    model_id: Optional[str] = None,
+    data_schema: Optional[dict] = None,
+) -> dict:
     """Generate Python code from natural language query.
 
     Parameters
@@ -153,6 +144,8 @@ async def generate_code(query: str, data_type: str = "gnss",
     data_type : str
     data_description : str
     model_id : str, optional
+    data_schema : dict, optional
+        Real data schema for prompt injection.
 
     Returns
     -------
@@ -165,7 +158,7 @@ async def generate_code(query: str, data_type: str = "gnss",
         return {"code": "", "success": False,
                 "error": "没有可用的 AI 模型，请配置 API Key"}
 
-    messages = build_generation_prompt(query, data_type, data_description)
+    messages = build_generation_prompt(query, data_type, data_description, data_schema)
     try:
         response = await llm.chat(messages)
         code = extract_code_from_response(response.content)

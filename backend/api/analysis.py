@@ -103,43 +103,60 @@ async def get_analysis_task(
 from pydantic import BaseModel, Field
 from typing import Optional
 
-
 class CodeGenRequest(BaseModel):
     query: str = Field(..., description="自然语言查询")
     data_type: str = Field("gnss", description="数据类型")
     data_description: str = Field("", description="数据列描述")
+    file_id: Optional[str] = Field(None, description="已上传的数据文件 ID")
     model_id: Optional[str] = Field(None, description="模型 ID")
-
 
 class ExecuteRequest(BaseModel):
     query: str = Field(..., description="自然语言查询")
     data_type: str = Field("gnss", description="数据类型")
     data_description: str = Field("", description="数据列描述")
+    file_id: Optional[str] = Field(None, description="已上传的数据文件 ID")
     model_id: Optional[str] = Field(None, description="模型 ID")
     use_cache: bool = Field(True, description="是否使用缓存")
-
-
 @router.post("/nl2query/code", summary="NL→Python 代码生成")
 async def nl2query_code(body: CodeGenRequest):
     """将自然语言查询转换为 Python 代码"""
     from backend.analysis.codegen import generate_code
+
+    # Load data schema if a file was specified
+    data_schema = None
+    if body.file_id:
+        from backend.analysis.data_loader import load_data_for_analysis
+        _df, data_schema, err = load_data_for_analysis(body.file_id)
+        if err:
+            return {"code": "", "success": False, "error": f"数据读取失败: {err}"}
+
     result = await generate_code(
         query=body.query,
         data_type=body.data_type,
         data_description=body.data_description,
         model_id=body.model_id,
+        data_schema=data_schema,
     )
     return result
-
-
-@router.post("/nl2query/execute", summary="NL→Python 代码生成并执行")
 async def nl2query_execute(body: ExecuteRequest):
     """将自然语言查询转换为 Python 代码并在沙箱中执行"""
     from backend.analysis.codegen import generate_code
     from backend.core.sandbox import CodeSandbox
 
-    # 1. Check cache
-    if body.use_cache:
+    # Load data if a file was specified
+    df = None
+    data_schema = None
+    sandbox_context = None
+    if body.file_id:
+        from backend.analysis.data_loader import load_data_for_analysis, dataframe_to_sandbox_context
+        df, data_schema, err = load_data_for_analysis(body.file_id)
+        if err:
+            return {"code": "", "success": False, "error": f"数据读取失败: {err}"}
+        if df is not None:
+            sandbox_context = dataframe_to_sandbox_context(df)
+
+    # 1. Check cache (only when no file context changes)
+    if body.use_cache and not sandbox_context:
         from backend.analysis.cache import QueryCache
         cache = QueryCache()
         cached = cache.get(body.query, body.data_type)
@@ -151,26 +168,28 @@ async def nl2query_execute(body: ExecuteRequest):
                 "result": cached.get("result", {}),
             }
 
-    # 2. Generate code
+    # 2. Generate code with data schema
     gen_result = await generate_code(
         query=body.query,
         data_type=body.data_type,
         data_description=body.data_description,
         model_id=body.model_id,
+        data_schema=data_schema,
     )
     if not gen_result["success"]:
         return gen_result
 
     code = gen_result["code"]
 
-    # 3. Execute in sandbox
+    # 3. Execute in sandbox with data context injected
     sandbox = CodeSandbox(timeout=30)
     try:
-        exec_result = sandbox.execute_python(code)
+        exec_result = sandbox.execute_python(code, context=sandbox_context)
         output = exec_result.to_dict()
 
-        # 4. Cache result
-        if body.use_cache and exec_result.success:
+        # 4. Cache result (only when no data file context, since schema can vary)
+        if body.use_cache and exec_result.success and not sandbox_context:
+            cache = QueryCache()
             cache.set(body.query, body.data_type, code, output)
 
         return {
@@ -181,6 +200,43 @@ async def nl2query_execute(body: ExecuteRequest):
         }
     finally:
         sandbox.clean()
+
+async def clear_query_cache(cache_key: str):
+    """清除指定的查询缓存"""
+    from backend.analysis.cache import QueryCache
+    cache = QueryCache()
+    cache.delete(cache_key)
+    return {"success": True}
+
+
+@router.get("/nl2query/files", summary="列出已上传的数据文件")
+async def list_data_files():
+    """列出所有 CSV/XLSX 数据文件供前端选择"""
+    from backend.analysis.data_loader import list_uploaded_files
+    return {"files": list_uploaded_files()}
+
+
+@router.get("/nl2query/files/{file_id}/preview", summary="数据文件预览")
+async def preview_data_file(file_id: str):
+    """读取数据文件的列信息和前5行示例"""
+    from backend.analysis.data_loader import load_data_for_analysis
+    _df, schema, err = load_data_for_analysis(file_id)
+    if err:
+        return {"success": False, "error": err}
+    if not schema:
+        return {"success": False, "error": "无法提取数据结构"}
+
+    sample_rows = []
+    for row in schema.get("sample_rows", []):
+        sample_rows.append({k: str(v) for k, v in row.items()})
+
+    return {
+        "success": True,
+        "column_names": schema["column_names"],
+        "column_info": schema["column_info"],
+        "row_count": schema["row_count"],
+        "sample_rows": sample_rows,
+    }
 
 
 @router.get("/nl2query/cache", summary="查询缓存列表")

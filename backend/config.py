@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     metrics_enabled: bool = True
     metrics_port: int = 9090
 
+    # --- 监测数据库 ---
+    monitoring_db_url: str = "sqlite:///./data/monitoring_data.db"
+    monitoring_seed_on_startup: bool = True
+
     @property
     def data_dir(self) -> Path:
         return Path("./data").resolve()

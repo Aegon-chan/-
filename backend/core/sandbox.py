@@ -127,6 +127,9 @@ class CodeSandbox:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as _plt
+        import warnings
+        warnings.filterwarnings("ignore", category=UserWarning)
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         import sys as _sys
         from io import StringIO as _StringIO
@@ -134,7 +137,8 @@ class CodeSandbox:
         _old_stdout = _sys.stdout
         _sys.stdout = _stdout_capture
 
-        _results = {"_figures": [], "_data": {}}
+        __sandbox_results = {"_figures": [], "_data": {}}
+        _results = __sandbox_results
         _fig_counter = 0
 
         def _save_fig(name=None):
@@ -146,7 +150,7 @@ class CodeSandbox:
                 fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
                 buf.seek(0)
                 b64 = _b64.b64encode(buf.read()).decode("utf-8")
-                _results["_figures"].append({
+                __sandbox_results["_figures"].append({
                     "id": name or f"fig_{_fig_counter}",
                     "mime": "image/png",
                     "b64": b64,
@@ -163,16 +167,16 @@ class CodeSandbox:
     _WRAPPER_EPILOGUE = textwrap.dedent("""\
 
         except Exception as _sandbox_err:
-            _results["_error"] = str(_sandbox_err)
+            __sandbox_results["_error"] = str(_sandbox_err)
             import traceback as _tb
-            _results["_traceback"] = _tb.format_exc()
+            __sandbox_results["_traceback"] = _tb.format_exc()
         finally:
             _sys.stdout = _old_stdout
-            _results["_stdout"] = _stdout_capture.getvalue()
+            __sandbox_results["_stdout"] = _stdout_capture.getvalue()
             _save_fig("fig_final")
         import json as _json
         print("<<SANDBOX_RESULT>>")
-        print(_json.dumps(_results))
+        print(_json.dumps(__sandbox_results))
         print("<<SANDBOX_RESULT_END>>")
     """)
 
