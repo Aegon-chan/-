@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     app_secret_key: str = "dev-secret-key-change-in-production"
     app_debug: bool = True
     app_host: str = "0.0.0.0"
-    app_port: int = 8000
+    app_port: int = 8010
 
     # --- 数据库 ---
     database_url: str = "sqlite:///./data/research_agent.db"

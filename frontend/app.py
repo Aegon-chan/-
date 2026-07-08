@@ -145,7 +145,7 @@ _sessions: list[dict] = []
 _current_session_id: str = ""
 _agents: dict = {}
 _pending_attachments: list[dict] = []
-_BACKEND_URL = "http://localhost:8000"
+_BACKEND_URL = "http://localhost:8010"
 _session_refreshing: bool = False
 
 
@@ -508,7 +508,7 @@ def _submit_feedback(rating, label, up_btn, down_btn, status_label):
     import requests
     try:
         resp = requests.post(
-            "http://localhost:8000/api/v1/feedback/collect",
+            "http://localhost:8010/api/v1/feedback/collect",
             params={
                 "message_id": _ensure_session(),
                 "rating": rating,
@@ -656,7 +656,7 @@ html, body { height: 100%; margin: 0; padding: 0; }
     ui.add_body_html('''<script>
 // Drag-and-drop file upload handler
 window.__dropResults = [];
-window._backendUrl = 'http://localhost:8000/api/v1';
+window._backendUrl = 'http://localhost:8010/api/v1';
 
 document.addEventListener('DOMContentLoaded', function() {
     let dragCounter = 0;
@@ -900,13 +900,11 @@ document.addEventListener('DOMContentLoaded', function() {
         try:
             result_json = await ui.run_javascript(
                 "JSON.stringify(window.__dropResults || [])",
-                respond=True,
                 timeout=3.0
             )
             # Check for JS-side upload errors
             err_json = await ui.run_javascript(
                 "JSON.stringify(window.__dropErrors || [])",
-                respond=True,
                 timeout=2.0
             )
             if err_json and err_json != "[]":
