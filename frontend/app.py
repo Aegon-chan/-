@@ -34,13 +34,15 @@ logger = logging.getLogger("research_agent.frontend")
 # ── Layout CSS injected once ──
 _LAYOUT_CSS = """
 <style>
-.full-height-container { display: flex; flex-direction: column; height: calc(100vh - 64px); }
-.chat-messages-area { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
-.chat-input-bar { flex: 0 0 auto; position: relative; }
+/* Minimal chat layout (JS sets final heights dynamically) */
+.full-height-container { display: flex; flex-direction: column; }
+.chat-messages-area { flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-bottom: 70px; scroll-behavior: smooth; }
+.chat-input-bar { flex: 0 0 auto; }
 .chat-messages-area::-webkit-scrollbar { width: 6px; }
 .chat-messages-area::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
 .chat-messages-area::-webkit-scrollbar-thumb:hover { background: #aaa; }
 /* Drag-and-drop overlay */
+.chat-input-bar.drag-over {
 .chat-input-bar.drag-over {
     border: 2px dashed #4a9eff !important;
     background-color: rgba(74, 158, 255, 0.06) !important;
@@ -614,6 +616,15 @@ def chat_page():
     _header()
 
 
+    # Inject chat-page layout fix (height cascade so container fills viewport)
+    ui.add_body_html('''<style>
+html, body { height: 100%; margin: 0; padding: 0; }
+.q-layout { height: 100%; }
+.q-page-container { height: 100% !important; }
+.q-page { height: 100% !important; }
+.full-height-container { height: 100% !important; }
+</style>''')
+
     # Inject custom CSS for drag-and-drop visual feedback
     ui.add_body_html('''<style>
 .chat-input-bar.drag-over {
@@ -705,6 +716,36 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 });
+</script>''')
+    # Inject layout fix JavaScript
+    ui.add_body_html('''<script>
+// Chat layout fix - keeps input bar at bottom of viewport
+(function() {
+    function fixLayout() {
+        var container = document.querySelector('.full-height-container');
+        if (!container) return;
+        var header = document.querySelector('.q-header');
+        var headerH = header ? header.offsetHeight : 0;
+        var h = window.innerHeight - headerH;
+        container.style.height = h + 'px';
+        container.style.minHeight = h + 'px';
+        container.style.overflow = 'hidden';
+        
+        var inputBar = document.querySelector('.chat-input-bar');
+        if (inputBar) {
+            inputBar.style.position = 'fixed';
+            inputBar.style.bottom = '0';
+            inputBar.style.left = '0';
+            inputBar.style.right = '0';
+            inputBar.style.zIndex = '1000';
+        }
+    }
+    fixLayout();
+    window.addEventListener('resize', fixLayout);
+    setTimeout(fixLayout, 500);
+    setTimeout(fixLayout, 1000);
+    setTimeout(fixLayout, 2000);
+})();
 </script>''')
 
     has_model = _list_available_models() != ["No model available"]
