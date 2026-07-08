@@ -16,6 +16,7 @@ import asyncio
 import base64
 import os
 import json
+import re
 import logging
 import uuid
 from datetime import datetime
@@ -274,6 +275,7 @@ def _load_and_display_messages(chat_area, loading_label=None):
         if msgs:
             loaded_from = "local"
     # Render messages
+    _pending_assistant_images = []
     for msg in msgs:
         role = msg.get("role", "")
         content = msg.get("content", "")
@@ -292,7 +294,12 @@ def _load_and_display_messages(chat_area, loading_label=None):
                     ui.markdown(content)
         elif role == "assistant":
             with chat_area:
-                ui.chat_message(content, name="助手", sent=False)
+                with ui.chat_message("", name="助手", sent=False):
+                    ui.markdown(content)
+            _pending_assistant_images.append((chat_area, content))
+    # Render download buttons for assistant messages with images
+    for area, content in _pending_assistant_images:
+        _add_image_downloads(area, content)
     logger.info("Loaded %d messages from %s for session %s", len(msgs), loaded_from, _current_session_id)
     if loading_label is not None:
         try:
@@ -381,6 +388,33 @@ def _persist_messages(session_id, messages):
         )
     except Exception as e:
         logger.warning("Failed to sync messages to backend: %s", e)
+
+
+
+def _add_image_downloads(column_el, markdown_text):
+    """Parse markdown image references (![alt](url)) and add download buttons below each image.
+    Supports both relative (/uploads/xxx.png) and absolute (https://...) URLs.
+    """
+    if not markdown_text:
+        return
+    pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
+    matches = list(re.finditer(pattern, markdown_text))
+    if not matches:
+        return
+
+    with column_el:
+        for match in matches:
+            alt_text = match.group(1) or "image"
+            url = match.group(2)
+            full_url = f"{_BACKEND_URL}{url}" if url.startswith("/") else url
+            with ui.row().classes("items-center gap-0 ml-12 -mt-2 mb-1"):
+                ui.button(
+                    icon="download",
+                    on_click=lambda u=full_url: ui.run_javascript(f"window.open('{u}', '_blank')")
+                ).props("flat dense round size=sm").tooltip(f"下载图片: {alt_text}")
+                ui.label(f"  {alt_text}").classes("text-xs text-gray-500 cursor-pointer").on(
+                    "click", lambda u=full_url: ui.run_javascript(f"window.open('{u}', '_blank')")
+                )
 
 
 # ---- Chat logging ----
@@ -519,6 +553,7 @@ def _drawer():
                     ("Memory", "/memories", "psychology"),
                     ("Settings", "/settings", "settings"),
                     ("Database", "/database", "storage"),
+                    ("Data Import", "/data-import", "upload_file"),
                 ]
                 for label, path, icon in nav_items:
                     ui.button(label, icon=icon, on_click=lambda p=path: ui.navigate.to(p)
@@ -797,6 +832,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     ui.markdown(f"Error: {e}")
                     logger.exception("Chat error")
             finally:
+                # After streaming completes, add download buttons for markdown images
+                if full:
+                    _add_image_downloads(chat_area, full)
                 msgs = []
                 user_content = text
                 if text:
@@ -1652,25 +1690,87 @@ def database_page():
                         columns=col_defs,
                     ).classes("w-full text-xs").props("flat dense virtual-scroll")
 
+                    # Batch delete section
                     if pk_name:
-                        ui.label("Delete row by ID:").classes("text-xs text-gray-500 mt-1")
-                        delete_id_input = ui.input(placeholder=f"Enter {pk_name}").classes("w-64")
-                        def delete_selected_row():
-                            rid = delete_id_input.value.strip()
-                            if not rid:
-                                ui.notify("Enter a row ID", type="warning")
+                        ui.separator().classes("my-1")
+                        ui.markdown("**Batch Delete**").classes("text-xs")
+                        with ui.row().classes("items-center gap-2"):
+                            delete_ids_input = ui.input(placeholder=f"Enter {pk_name}s (comma-separated)").classes("w-96")
+                            def do_batch_delete():
+                                ids_text = delete_ids_input.value.strip()
+                                if not ids_text:
+                                    ui.notify("Enter at least one ID", type="warning")
+                                    return
+                                ids = [x.strip() for x in ids_text.split(",") if x.strip()]
+                                import requests as _req2
+                                try:
+                                    resp = _req2.delete(f"{_BACKEND_URL}/api/v1/db/{db}/{table}/batch-delete",
+                                                        json={"ids": ids}, timeout=30)
+                                    if resp.status_code == 200:
+                                        data = resp.json()
+                                        ui.notify(f"Deleted {data.get('deleted_count', 0)} rows", type="positive")
+                                        delete_ids_input.value = ""
+                                        load_table_data()
+                                    elif resp.status_code == 404:
+                                        ui.notify("No matching rows found", type="warning")
+                                    else:
+                                        ui.notify(f"Delete failed: {resp.text}", type="error")
+                                except Exception as e:
+                                    ui.notify(f"Error: {e}", type="error")
+                            ui.button("Batch Delete by IDs", icon="delete_sweep",
+                                      on_click=do_batch_delete).props("flat dense color=red size=sm")
+
+                        # Condition delete
+                        ui.markdown("**Delete by Condition**").classes("text-xs mt-1")
+                        with ui.row().classes("items-center gap-2 flex-wrap"):
+                            date_col_input = ui.select(
+                                label="Date Column",
+                                options=[c["name"] for c in cols if "TIME" in c["type"].upper() or "DATE" in c["type"].upper()],
+                                value=None,
+                            ).classes("w-40")
+                            cond_after = ui.input(placeholder="After (ISO date)").classes("w-40")
+                            cond_before = ui.input(placeholder="Before (ISO date)").classes("w-40")
+
+                        def do_condition_delete(dry_run_first=True):
+                            import requests as _req3
+                            cond = {}
+                            if date_col_input.value:
+                                dc = {"column": date_col_input.value}
+                                if cond_after.value.strip():
+                                    dc["start"] = cond_after.value.strip()
+                                if cond_before.value.strip():
+                                    dc["before"] = cond_before.value.strip()
+                                if "start" in dc or "before" in dc:
+                                    cond["date_condition"] = dc
+                            if not cond:
+                                ui.notify("Set at least one condition", type="warning")
                                 return
-                            import requests as _req_del
+                            cond["dry_run"] = dry_run_first
                             try:
-                                del_resp = _req_del.delete(f"{_BACKEND_URL}/api/v1/db/{db}/{table}/{rid}", timeout=10)
-                                if del_resp.status_code == 200:
-                                    ui.notify(f"Row {rid} deleted", type="positive")
-                                    load_table_data()
+                                resp = _req3.post(f"{_BACKEND_URL}/api/v1/db/{db}/{table}/delete-by-condition",
+                                                  json=cond, timeout=30)
+                                if resp.status_code == 200:
+                                    data = resp.json()
+                                    matched = data.get("matched_count", 0)
+                                    if dry_run_first:
+                                        ui.notify(f"Preview: {matched} rows would be deleted", type="info",
+                                                  multi_line=True)
+                                        if data.get("sample_rows"):
+                                            ui.notify(f"Sample: {len(data['sample_rows'])} rows shown", type="info")
+                                    else:
+                                        deleted = data.get("deleted_count", 0)
+                                        ui.notify(f"Deleted {deleted} rows", type="positive")
+                                        load_table_data()
                                 else:
-                                    ui.notify(f"Delete failed: {del_resp.text}", type="error")
+                                    ui.notify(f"Error: {resp.text}", type="error")
                             except Exception as e:
                                 ui.notify(f"Error: {e}", type="error")
-                        ui.button("Delete Selected Row", icon="delete", on_click=delete_selected_row).props("flat dense color=red size=sm")
+
+                        with ui.row().classes("gap-2"):
+                            ui.button("Preview Delete", icon="preview",
+                                      on_click=lambda: do_condition_delete(True)).props("flat dense color=orange size=sm")
+                            ui.button("Confirm Delete", icon="delete_forever",
+                                      on_click=lambda: do_condition_delete(False)).props("flat dense color=red size=sm")
             except Exception as e:
                 with data_area:
                     ui.label(f"Error loading data: {e}").classes("text-red-500")
@@ -1730,7 +1830,7 @@ def database_page():
             ui.button("Clear Results", icon="clear", on_click=lambda: query_result_area.clear()).props("flat")
 
         ui.separator().classes("my-2")
-        ui.markdown("> **Safety**: Only SELECT queries are allowed. DELETE operations are restricted to single-row deletion by primary key.").classes("text-xs text-gray-400")
+        ui.markdown("> **Safety**: Only SELECT queries are allowed. Use the Batch Delete section for row deletions.").classes("text-xs text-gray-400")
 
 
     def open_table_browser(db, table):
@@ -1738,6 +1838,210 @@ def database_page():
         browser_table.value = table
         current_page["value"] = 1
         load_table_data()
+
+
+
+@ui.page("/data-import")
+def data_import_page():
+    """Data import page - upload CSV/XLSX and import into database tables."""
+    _ensure_layout_css()
+    _drawer()
+    _header("Data Import")
+
+    with ui.column().classes("w-full max-w-4xl mx-auto p-4 gap-4"):
+        ui.markdown("## Data Import")
+        ui.label("Upload CSV or Excel files and import data directly into database tables.").classes("text-sm text-gray-500 mb-2")
+
+        # Step 1: Select target
+        with ui.card().classes("w-full p-4"):
+            ui.markdown("### Step 1: Select Target")
+            with ui.row().classes("gap-3 items-end"):
+                import_db = ui.select(
+                    label="Database",
+                    options={"main": "Main", "monitoring": "Monitoring"},
+                    value="main",
+                ).classes("w-44")
+                import_table = ui.select(label="Table", options=[], value=None).classes("w-64")
+                import_data_type = ui.select(
+                    label="Data Type (monitoring only)",
+                    options={"": "Auto detect", "groundwater": "Groundwater", "rainfall": "Rainfall",
+                             "pore_pressure": "Pore Pressure", "gnss": "GNSS", "insar": "InSAR"},
+                    value="",
+                ).classes("w-44").set_visibility(False)
+
+                def on_import_db_change():
+                    try:
+                        import requests as _req
+                        resp = _req.get(f"{_BACKEND_URL}/api/v1/db/tables", timeout=10)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            opts = [t["name"] for t in data.get("tables", []) if t["database"] == import_db.value]
+                            import_table.set_options(opts)
+                            if opts:
+                                import_table.value = opts[0]
+                        # Show/hide data_type selector for monitoring db
+                        import_data_type.set_visibility(import_db.value == "monitoring")
+                    except Exception:
+                        pass
+
+                import_db.on_value_change(on_import_db_change)
+                ui.button("Load Tables", icon="refresh", on_click=on_import_db_change).props("flat size=sm")
+                ui.timer(0.3, on_import_db_change, once=True)
+
+        # Step 2: Upload file
+        with ui.card().classes("w-full p-4"):
+            ui.markdown("### Step 2: Upload File")
+            ui.label("Supported formats: CSV, XLSX, XLS").classes("text-sm text-gray-500")
+
+            upload_result = ui.label("").classes("text-sm")
+            preview_area = ui.column().classes("w-full gap-2")
+            import_btn = ui.button("Import to Database", icon="cloud_upload", on_click=lambda: None).props("color=primary").set_visibility(False)
+            uploaded_file_data = {"content": None, "name": ""}
+
+            def do_preview(e):
+                upload_result.text = f"Processing: {e.name}..."
+                preview_area.clear()
+                import_btn.set_visibility(False)
+                uploaded_file_data["content"] = e.content
+                uploaded_file_data["name"] = e.name
+
+                table_name = import_table.value
+                db_name = import_db.value
+                if not table_name:
+                    ui.notify("Please select a target table first", type="warning")
+                    return
+
+                import requests as _req
+                try:
+                    # Use the generic import/preview endpoint
+                    files = {"file": (e.name, e.content, "application/octet-stream")}
+                    resp = _req.post(
+                        f"{_BACKEND_URL}/api/v1/db/{db_name}/{table_name}/import/preview",
+                        files=files, timeout=30,
+                    )
+                    if resp.status_code != 200:
+                        upload_result.text = f"Preview failed: {resp.text}"
+                        return
+
+                    data = resp.json()
+                    upload_result.text = f"Preview: {data.get('total_rows', 0)} rows detected"
+
+                    with preview_area:
+                        ui.markdown("**Column Mapping:**")
+                        mapping = data.get("column_mapping", {})
+                        if mapping:
+                            map_rows = [{"File Column": k, "DB Column": v} for k, v in mapping.items()]
+                            ui.table(
+                                rows=map_rows,
+                                columns=[
+                                    {"name": "File Column", "label": "File Column", "field": "File Column"},
+                                    {"name": "DB Column", "label": "DB Column", "field": "DB Column"},
+                                ],
+                            ).classes("w-full text-xs").props("flat dense")
+                        else:
+                            ui.label("No columns matched").classes("text-red-500 text-sm")
+
+                        missing = data.get("missing_columns", [])
+                        if missing:
+                            ui.label(f"Unmatched columns: {', '.join(missing)}").classes("text-yellow-600 text-sm")
+
+                        issues = data.get("potential_issues", [])
+                        if issues:
+                            for iss in issues:
+                                ui.label(f"⚠ {iss}").classes("text-orange-500 text-xs")
+
+                        if data.get("sample_rows"):
+                            ui.markdown("**Sample Data (first 5 rows):**")
+                            sample = data["sample_rows"]
+                            if sample:
+                                sample_cols = list(sample[0].keys())
+                                ui.table(
+                                    rows=sample,
+                                    columns=[{"name": c, "label": c, "field": c} for c in sample_cols],
+                                ).classes("w-full text-xs").props("flat dense")
+
+                    import_btn.set_visibility(True)
+
+                except Exception as ex:
+                    upload_result.text = f"Error: {ex}"
+
+            def do_import():
+                db_name = import_db.value
+                table_name = import_table.value
+                if not table_name or not uploaded_file_data["content"]:
+                    ui.notify("Please upload a file first", type="warning")
+                    return
+
+                import requests as _req
+                try:
+                    files = {"file": (uploaded_file_data["name"], uploaded_file_data["content"],
+                                      "application/octet-stream")}
+                    params = {"skip_errors": "true"}
+                    resp = _req.post(
+                        f"{_BACKEND_URL}/api/v1/db/{db_name}/{table_name}/import",
+                        files=files, params=params, timeout=120,
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        ui.notify(f"Import complete: {data.get('imported', 0)} rows imported, "
+                                  f"{data.get('skipped', 0)} skipped", type="positive")
+                        upload_result.text = (f"✓ Imported {data.get('imported', 0)} / {data.get('total_rows', 0)} rows "
+                                             f"into {db_name}.{table_name}")
+                        preview_area.clear()
+                        import_btn.set_visibility(False)
+                        if data.get("errors"):
+                            with preview_area:
+                                ui.markdown("**Import Warnings/Errors:**")
+                                for err in data["errors"][:10]:
+                                    ui.label(f"Row {err.get('row', '?')}: {err.get('reason', '')}").classes("text-orange-500 text-xs")
+                    else:
+                        ui.notify(f"Import failed: {resp.text}", type="error")
+                except Exception as ex:
+                    ui.notify(f"Import error: {ex}", type="error")
+
+            import_btn.on_click(do_import)
+            ui.upload(label="Choose File", on_upload=do_preview, multiple=False).props("accept=.csv,.xlsx,.xls")
+
+        # Step 3: Recent imports (for monitoring data)
+        ui.separator().classes("my-2")
+        ui.markdown("### Recent Imports (Monitoring)")
+        recent_area = ui.column().classes("w-full gap-1")
+
+        def load_recent_imports():
+            recent_area.clear()
+            try:
+                import requests as _req
+                # Query import_batches table
+                resp = _req.post(f"{_BACKEND_URL}/api/v1/db/query",
+                                 json={"sql": "SELECT * FROM import_batches ORDER BY created_at DESC LIMIT 20",
+                                       "database": "monitoring"}, timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    rows = data.get("rows", [])
+                    cols = data.get("columns", [])
+                    if rows:
+                        col_map = {i: c for i, c in enumerate(cols)}
+                        table_rows = []
+                        for r in rows:
+                            row_obj = {}
+                            for i, v in enumerate(r):
+                                row_obj[col_map.get(i, f"col{i}")] = str(v)[:30]
+                            table_rows.append(row_obj)
+                        with recent_area:
+                            ui.table(
+                                rows=table_rows,
+                                columns=[{"name": c, "label": c, "field": c, "sortable": True} for c in cols],
+                            ).classes("w-full text-xs").props("flat dense virtual-scroll")
+                    else:
+                        with recent_area:
+                            ui.label("No recent imports found.").classes("text-gray-400 text-sm")
+            except Exception:
+                with recent_area:
+                    ui.label("Could not load import history.").classes("text-gray-400 text-sm")
+
+        ui.button("Refresh", icon="refresh", on_click=load_recent_imports).props("flat size=sm")
+        ui.timer(0.5, load_recent_imports, once=True)
+
 
 
 def run():
