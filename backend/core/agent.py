@@ -14,6 +14,19 @@ import time
 import uuid
 from datetime import datetime
 from typing import Any, AsyncIterator, Optional
+from typing import TypedDict
+
+
+class IntentResult(TypedDict):
+    """Type-safe intent detection result"""
+    needs_analysis: bool
+    needs_report: bool
+    needs_data_query: bool
+    analysis_query: str
+    data_type: str
+    time_range_start: Optional[datetime]
+    time_range_label: str
+
 
 from backend.models.base import BaseLLM, ContentPart, Message, ModelResponse
 from backend.uploads import extract_text_from_file, image_to_data_uri
@@ -484,7 +497,7 @@ class ResearchAgent:
 
     # ═══════════════════════════ 意图检测与工具编排 ═══════════════════════════
 
-    def _detect_intent(self, user_input: str) -> dict:
+    def _detect_intent(self, user_input: str) -> IntentResult:
         """检测用户查询是否需要数据分析或报告生成。
 
         Returns:
@@ -544,21 +557,60 @@ class ResearchAgent:
         if needs_data_query and not needs_analysis:
             needs_analysis = True  # Trigger analysis path for data display
 
+        time_range_start, time_range_label = self._extract_time_range(user_input)
         return {
             "needs_analysis": needs_analysis,
             "needs_report": needs_report,
             "needs_data_query": needs_data_query,
             "analysis_query": user_input,
+            "data_type": data_type,
+            "time_range_start": time_range_start,
+            "time_range_label": time_range_label,
         }
+
+    def _extract_time_range(self, user_input: str):
+        """\u4ece\u7528\u6237\u67e5\u8be2\u4e2d\u63d0\u53d6\u65f6\u95f4\u8303\u56f4\u3002
+        Returns:
+            (start_datetime_or_None, label_or_empty)
+        """
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        text = user_input.lower()
+        if any(kw in text for kw in ["\u6700\u8fd1\u4e00\u4e2a\u6708", "\u8fd1\u4e00\u4e2a\u6708", "\u4e00\u4e2a\u6708\u6765", "\u4e00\u4e2a\u6708\u5185", "\u8fd9\u4e00\u6708"]):
+            return (now - timedelta(days=30), "\u6700\u8fd1\u4e00\u4e2a\u6708")
+        if any(kw in text for kw in ["\u8fd9\u4e2a\u6708", "\u672c\u6708"]):
+            start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            return (start, "\u672c\u6708")
+        if any(kw in text for kw in ["\u4e0a\u4e2a\u6708"]):
+            first_of_this = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            start = first_of_this - timedelta(days=1)
+            start = start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            return (start, "\u4e0a\u4e2a\u6708")
+        if any(kw in text for kw in ["\u6700\u8fd1\u4e00\u5468", "\u8fd1\u4e00\u5468", "\u4e00\u5468\u6765"]):
+            return (now - timedelta(days=7), "\u6700\u8fd1\u4e00\u5468")
+        if any(kw in text for kw in ["\u6700\u8fd1\u4e09\u5929", "\u8fd1\u4e09\u5929", "\u8fd1\u4e09\u65e5"]):
+            return (now - timedelta(days=3), "\u6700\u8fd1\u4e09\u5929")
+        if any(kw in text for kw in ["\u4eca\u5e74"]):
+            start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            return (start, "\u4eca\u5e74")
+        if any(kw in text for kw in ["\u6700\u8fd1", "\u8fd1\u671f"]):
+            return (now - timedelta(days=30), "\u6700\u8fd1")
+        return (None, "")
 
     def _format_analysis_summary(self, result: dict) -> str:
         """将 NL2Query 分析结果格式化为结构化文本，供 LLM 理解。"""
+        if not isinstance(result, dict):
+            return "Analysis failed: result is not dict (" + type(result).__name__ + ")"
         if not result.get("success"):
-            err_raw = result.get("error", "") or result.get("result", {}).get("stderr", "") or result.get("result", {}).get("stdout", "")[:200]
+            res = result.get("result", {})
+            stdout = res.get("stdout", "").strip()
+            err_raw = result.get("error", "") or res.get("stderr", "") or (stdout[:200] if stdout else "")
             if "ModuleNotFoundError" in err_raw:
                 err_display = "沙箱中缺少所需 Python 包，图表生成失败"
             else:
                 err_display = err_raw[:200] if err_raw else "未知错误"
+            if stdout:
+                return f"部分结果（执行到出错前）:\n{fence}\n{stdout[:2000]}\n{fence}\n\n> 注：后续分析执行失败: {err_display}"
             return f"分析执行失败: {err_display}"
 
         res = result.get("result", {})
@@ -589,13 +641,19 @@ class ResearchAgent:
 
     def _format_analysis_stream(self, result: dict) -> str:
         """将分析结果格式化为面向用户的流式输出文本。"""
+        if not isinstance(result, dict):
+            return "Analysis failed: result is not dict (" + type(result).__name__ + ")"
         if not result.get("success"):
-            err_raw = result.get("error", "") or result.get("result", {}).get("stderr", "") or result.get("result", {}).get("stdout", "")[:200]
+            res = result.get("result", {})
+            stdout = res.get("stdout", "").strip()
+            err_raw = result.get("error", "") or res.get("stderr", "") or (stdout[:200] if stdout else "")
             if "ModuleNotFoundError" in err_raw:
                 err_display = "沙箱中缺少所需 Python 包，图表生成失败"
             else:
                 err_display = err_raw[:200] if err_raw else "未知错误"
-            return f"❌ 分析执行失败: {err_display}"
+            if stdout:
+                return f"\u26a0\ufe0f **分析部分完成**（代码执行到某一步时出错）:\n{fence}\n{stdout[:1000]}\n{fence}\n\n*错误信息: {err_display}*"
+            return f"\u274c 分析执行失败: {err_display}"
 
         res = result.get("result", {})
         lines = ["✅ **数据分析完成**\n"]
@@ -616,8 +674,23 @@ class ResearchAgent:
 
         return "\n".join(lines)
 
-    async def _integrated_analysis(self, query: str, data_type: str = "gnss",
-                                    generate_report: bool = False) -> dict:
+    async def _integrated_analysis(self, query, data_type="gnss", generate_report=False):
+        """Run NL2Query analysis with error wrapper."""
+        try:
+            return await self._inner_integrated_analysis(query, data_type, generate_report)
+        except Exception as e:
+            import logging
+            logging.getLogger("research_agent.core").exception("_integrated_analysis error: %s", e)
+            return {
+                "analysis_result": None,
+                "analysis_text": f"Analysis failed: {e}",
+                "analysis_stream": f"Analysis failed: {e}",
+                "figures": [],
+                "report_text": "",
+                "report_stream": "",
+            }
+
+    async def _inner_integrated_analysis(self, query, data_type="gnss", generate_report=False):
         """运行 NL2Query 分析，可选生成报告，返回格式化结果。"""
         result = {
             "analysis_result": None,
@@ -688,8 +761,15 @@ class ResearchAgent:
     # 监测数据库查询
     # ============================================================
 
-    async def _query_monitoring_data(self, data_type: str = "groundwater", query: str = "") -> str:
-        """查询监测数据库，返回结构化文本供 LLM 使用。"""
+    async def _query_monitoring_data(self, data_type: str = "groundwater", query: str = "", time_range_start=None, time_range_label="") -> str:
+        """查询监测数据库，返回结构化文本供 LLM 使用。
+
+        Args:
+            data_type: 数据类型
+            query: 原始查询文本
+            time_range_start: 时间范围起始 (datetime or None)
+            time_range_label: 时间范围标签 (如 "最近一个月")
+        """
         try:
             from backend.analysis.monitoring_service import (
                 get_latest as svc_get_latest,
@@ -699,7 +779,33 @@ class ResearchAgent:
             from backend.db.monitoring_session import AsyncSessionLocal
 
             async with AsyncSessionLocal() as db:
-                # Try latest data first
+                # If time range specified, use query_measurements for rich data
+                if time_range_start:
+                    result = await query_measurements(
+                        db, data_type=data_type,
+                        start=time_range_start, limit=150,
+                    )
+                    if result.get("success") and result.get("records"):
+                        records = result["records"]
+                        lines = [
+                            f"数据类型: {data_type}",
+                            f"时间范围: {time_range_label}",
+                            f"记录数: {len(records)}",
+                        ]
+                        station_data = {}
+                        for r in records:
+                            sc = r.get("station_code", r.get("station_id", ""))
+                            if sc not in station_data:
+                                station_data[sc] = []
+                            t = r.get("measurement_time", "")
+                            v = "; ".join(f"{k}={v}" for k, v in r.get("values", {}).items())
+                            station_data[sc].append(f"  - {t}: {v}")
+                        for sc, items in station_data.items():
+                            lines.append(f"\n站点 {sc}:")
+                            lines.extend(items[:50])
+                        return "\n".join(lines)
+
+                # Fallback: try latest data per station
                 latest = await svc_get_latest(db, data_type)
                 if latest.get("success") and latest.get("records"):
                     records = latest["records"]
@@ -714,7 +820,7 @@ class ResearchAgent:
                         lines.append(f"  - {station} ({time_val}): {vals}")
                     return "\n".join(lines)
 
-                # If no latest data, try summary
+                # Last resort: summary
                 summary = await svc_get_summary(db, data_type)
                 if summary.get("success"):
                     return (
@@ -749,6 +855,17 @@ class ResearchAgent:
             context_parts.append(f"## 用户长期记忆\\n{memory_context}")
         if rag_context:
             context_parts.append(f"## 知识库参考内容\\n{rag_context}")
+
+        # 4a. 监测数据库查询
+        if intent.get("needs_data_query"):
+            monitoring_context = await self._query_monitoring_data(
+                data_type=intent.get("data_type", "groundwater"),
+                query=intent.get("analysis_query", ""),
+                time_range_start=intent.get("time_range_start"),
+                time_range_label=intent.get("time_range_label", ""),
+            )
+            if monitoring_context:
+                context_parts.append(f"## 监测数据库查询结果\n{monitoring_context}")
 
         # 5. 执行集成分析（含报告生成）
         if intent["needs_analysis"] or intent["needs_report"]:
@@ -820,6 +937,8 @@ class ResearchAgent:
             monitoring_context = await self._query_monitoring_data(
                 data_type=intent.get("data_type", "groundwater"),
                 query=intent.get("analysis_query", ""),
+                time_range_start=intent.get("time_range_start"),
+                time_range_label=intent.get("time_range_label", ""),
             )
             if monitoring_context:
                 context_parts.append(f"## 监测数据库查询结果\n{monitoring_context}")

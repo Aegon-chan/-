@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """监测数据库模型定义。
 
 包含 1 个站点表 + 5 个分类数据表：
@@ -169,6 +170,24 @@ class InSARMeasurement(MonitoringBase):
 
 
 # ---------------------------------------------------------------------------
+# 
+
+class ImportBatch(MonitoringBase):
+    """Import batch record for tracking uploaded data."""
+    __tablename__ = "import_batches"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    data_type = Column(String(32), nullable=False, index=True)
+    file_name = Column(String(256), default="")
+    batch_label = Column(String(128), default="")
+    total_rows = Column(Integer, default=0)
+    imported_rows = Column(Integer, default=0)
+    skipped_rows = Column(Integer, default=0)
+    time_range_start = Column(DateTime, nullable=True)
+    time_range_end = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
 # 工具函数：根据 data_type 获取对应的模型类
 # ---------------------------------------------------------------------------
 

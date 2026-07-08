@@ -15,6 +15,7 @@ import pandas as pd
 from backend.db.monitoring_session import AsyncSessionLocal
 from backend.db.monitoring_models import (
     DATA_TYPE_LABEL_MAP,
+    ImportBatch,
     MonitoringStation,
     GroundwaterMeasurement,
     RainfallMeasurement,
@@ -412,6 +413,23 @@ async def import_from_df(
     # 6. Store stations and data in DB
     async with AsyncSessionLocal() as db:
         try:
+            # Create batch record
+            import uuid
+            batch_id = str(uuid.uuid4())
+            batch_label = ""
+            batch = ImportBatch(
+                id=batch_id,
+                data_type=data_type,
+                file_name="",
+                batch_label=batch_label,
+                total_rows=len(records),
+                imported_rows=0,
+                skipped_rows=result.skipped,
+            )
+            db.add(batch)
+            await db.flush()
+            result.batch_id = batch_id
+
             # Resolve stations
             station_id_map = {}
             for sc in seen_stations:
@@ -457,6 +475,7 @@ async def import_from_df(
                 sid = station_id_map.get(sc)
                 if not sid:
                     continue
+                rec["batch_id"] = batch_id
                 obj = model_class(station_id=sid, **rec)
                 objs.append(obj)
 
@@ -477,6 +496,11 @@ async def import_from_df(
             await db.commit()
 
             result.imported = len(objs)
+            # Update batch record
+            batch.imported_rows = result.imported
+            if time_min and time_max:
+                batch.time_range_start = time_min
+                batch.time_range_end = time_max
             result.time_range = {
                 "start": time_min.isoformat() if time_min else None,
                 "end": time_max.isoformat() if time_max else None,
@@ -484,6 +508,7 @@ async def import_from_df(
 
             return {
                 "success": True,
+                "batch_id": batch_id,
                 "total_rows": result.total_rows,
                 "imported": result.imported,
                 "skipped": result.skipped,

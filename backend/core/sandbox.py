@@ -139,6 +139,8 @@ class CodeSandbox:
 
         __sandbox_results = {"_figures": [], "_data": {}}
         _results = __sandbox_results
+        sandboxresults = __sandbox_results
+        _data = __sandbox_results["_data"]
         _fig_counter = 0
 
         def _save_fig(name=None):

@@ -63,3 +63,12 @@ frontend*.err
 frontend*.log
 frontend*_live.txt
 _extract_agent.py
+
+# Temp/fix scripts (one-off debugging)
+deploy_*.py
+fix_*.py
+backend/api/database_admin.py.*
+backend_start.log
+_verify_active.py
+gen_chunks.py
+inject_chunks.py
