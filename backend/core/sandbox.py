@@ -184,17 +184,22 @@ class CodeSandbox:
 
     def __init__(self, timeout: int = 30, max_memory_mb: int = 512,
                  work_dir: Optional[Path] = None,
-                 figure_output_dir: Optional[Path] = None):
+                 figure_output_dir: Optional[Path] = None,
+                 docker_mode: bool = False,
+                 docker_image: str = "research-agent-sandbox:latest"):
         self.timeout = timeout
         self.max_memory_mb = max_memory_mb
         self.work_dir = work_dir or Path(tempfile.mkdtemp(prefix="sandbox_"))
         self.figure_output_dir = figure_output_dir or (self.work_dir / "figures")
         self.figure_output_dir.mkdir(parents=True, exist_ok=True)
+        self.docker_mode = docker_mode
+        self.docker_image = docker_image
         # PyInstaller: auto-set Agg backend
         if getattr(sys, "frozen", False):
             os.environ.setdefault("MPLBACKEND", "Agg")
             os.environ.setdefault("MATPLOTLIBRC", "/nonexistent")
             logger.info("PyInstaller frozen: MPLBACKEND=Agg")
+            self.docker_mode = False  # Docker unavailable in PyInstaller builds
 
     def execute_python(self, code: str, input_data: str = "",
                        context: Optional[dict] = None) -> SandboxResult:
@@ -274,6 +279,61 @@ class CodeSandbox:
                 stderr=str(e),
                 return_code=-1,
             )
+
+    def execute_python_docker(self, code: str, input_data: str = "") -> SandboxResult:
+        """Execute Python code in a Docker container for full isolation.
+
+        Requires Docker to be installed and the sandbox image built.
+        Falls back to subprocess execution if Docker is unavailable.
+        """
+        import shutil as _shutil
+        if not _shutil.which("docker"):
+            logger.warning("Docker not available, falling back to subprocess sandbox")
+            return self.execute_python(code, input_data)
+
+        start = time.perf_counter()
+        script_path = self.work_dir / "sandbox_script.py"
+        script_path.write_text(code, encoding="utf-8")
+
+        try:
+            result = subprocess.run(
+                ["docker", "run", "--rm",
+                 "--network", "none",
+                 "--memory", f"{self.max_memory_mb}m",
+                 "--cpus", "1",
+                 "-i",
+                 self.docker_image,
+                 "python3"],
+                input=code,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+                cwd=str(self.work_dir),
+            )
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            return SandboxResult(
+                success=result.returncode == 0,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                return_code=result.returncode,
+                execution_time_ms=elapsed_ms,
+            )
+        except subprocess.TimeoutExpired:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.warning("Docker sandbox timeout after %ss", self.timeout)
+            return SandboxResult(
+                success=False,
+                stderr=f"Execution timeout ({self.timeout}s) in Docker sandbox",
+                return_code=-1,
+                execution_time_ms=elapsed_ms,
+            )
+        except FileNotFoundError:
+            logger.warning("Docker binary not found, falling back to subprocess")
+            return self.execute_python(code, input_data)
+        except Exception as e:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.exception("Docker sandbox error, falling back to subprocess")
+            return self.execute_python(code, input_data)
 
     def clean(self):
         if self.work_dir and self.work_dir.exists():

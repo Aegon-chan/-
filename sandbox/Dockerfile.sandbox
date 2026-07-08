@@ -1,0 +1,33 @@
+﻿# Research Agent - Sandboxed Code Execution Image
+# Minimal Python image with only safe scientific packages
+# Used by CodeSandbox when docker_mode=True
+
+FROM python:3.12-slim
+
+# Install only safe scientific packages
+RUN pip install --no-cache-dir \
+    numpy \
+    pandas \
+    scipy \
+    statsmodels \
+    scikit-learn \
+    matplotlib \
+    plotly \
+    && rm -rf /root/.cache/pip
+
+# Create a non-root user
+RUN useradd -m -s /bin/bash sandbox && \
+    chmod 755 /home/sandbox
+
+# Working directory
+WORKDIR /home/sandbox
+
+# Drop privileges
+USER sandbox
+
+# Script execution - receives code via stdin or mounted file
+COPY --chown=sandbox:sandbox sandbox/run_sandboxed.sh /home/sandbox/run_sandboxed.sh
+RUN chmod +x /home/sandbox/run_sandboxed.sh
+
+# Default: read code from stdin and execute
+ENTRYPOINT ["/home/sandbox/run_sandboxed.sh"]

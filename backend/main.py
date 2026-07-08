@@ -177,6 +177,10 @@ app.include_router(api_router, prefix="/api/v1")
 from backend.api.monitoring import router as monitoring_router
 app.include_router(monitoring_router, prefix="/api/v1/monitoring")
 
+# --- Mobile API routes ---
+from mobile import mobile_router
+app.include_router(mobile_router, prefix="/api/v1/mobile")
+
 # --- Static file serving for uploads ---
 import os as _os
 _uploads_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "data", "uploads")
