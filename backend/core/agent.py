@@ -34,6 +34,7 @@ from pathlib import Path
 from backend.models.registry import ModelRegistry
 from backend.core.memory import MemoryStore
 from backend.core.strategy import StrategyLibrary
+from backend.core.context_manager import ContextManager
 from backend.self_growth.feedback import FeedbackCollector
 from backend.self_growth.prompt_optimizer import PromptOptimizer
 from backend.self_growth.memory_optimizer import MemoryOptimizer
@@ -190,6 +191,9 @@ class ResearchAgent:
         self._progressive = ProgressiveLearner()
 
         self._learning_mode: bool = False
+
+        # ---- 上下文管理（防止上下文无限膨胀） ----
+        self._context_manager = ContextManager()
 
         if self._optimization_enabled:
             self._start_optimization_thread()
@@ -777,6 +781,7 @@ class ResearchAgent:
                 query_measurements,
             )
             from backend.db.monitoring_session import AsyncSessionLocal
+            from backend.db.monitoring_models import DATA_TYPE_LABEL_MAP
 
             async with AsyncSessionLocal() as db:
                 # If time range specified, use query_measurements for rich data
@@ -788,7 +793,7 @@ class ResearchAgent:
                     if result.get("success") and result.get("records"):
                         records = result["records"]
                         lines = [
-                            f"数据类型: {data_type}",
+                            f"数据类型: {DATA_TYPE_LABEL_MAP.get(data_type, data_type)}",
                             f"时间范围: {time_range_label}",
                             f"记录数: {len(records)}",
                         ]
@@ -810,7 +815,7 @@ class ResearchAgent:
                 if latest.get("success") and latest.get("records"):
                     records = latest["records"]
                     lines = [
-                        f"数据类型: {data_type}",
+                        f"数据类型: {DATA_TYPE_LABEL_MAP.get(data_type, data_type)}",
                         f"站点数: {len(records)}",
                     ]
                     for r in records[:10]:
@@ -824,13 +829,13 @@ class ResearchAgent:
                 summary = await svc_get_summary(db, data_type)
                 if summary.get("success"):
                     return (
-                        f"数据类型: {data_type}\n"
+                        f"数据类型: {DATA_TYPE_LABEL_MAP.get(data_type, data_type)}\n"
                         f"总记录数: {summary.get("total_records", 0)}\n"
                         f"站点数: {summary.get("station_count", 0)}\n"
                         f"时间范围: {summary.get("time_range", {}).get("start", "")} ~ {summary.get("time_range", {}).get("end", "")}"
                     )
 
-            return f"监测数据库中没有 {data_type} 类型的数据"
+            return f"监测数据库中没有 {DATA_TYPE_LABEL_MAP.get(data_type, data_type)} 类型的数据"
         except ImportError:
             return "(监测数据库模块未加载)"
         except Exception as e:
@@ -857,7 +862,13 @@ class ResearchAgent:
             context_parts.append(f"## 知识库参考内容\\n{rag_context}")
 
         # 4a. 监测数据库查询
-        if intent.get("needs_data_query"):
+        # Always query monitoring DB when a specific data type is detected
+        should_query_db = (
+            intent.get("needs_data_query") or
+            (intent.get("needs_analysis") and intent.get("data_type", "") in 
+             ("groundwater", "rainfall", "pore_pressure", "gnss", "insar"))
+        )
+        if should_query_db:
             monitoring_context = await self._query_monitoring_data(
                 data_type=intent.get("data_type", "groundwater"),
                 query=intent.get("analysis_query", ""),
@@ -933,7 +944,13 @@ class ResearchAgent:
         # 4. 执行集成分析
 
         # 4a. 监测数据库查询
-        if intent.get("needs_data_query"):
+        # Always query monitoring DB when a specific data type is detected
+        should_query_db = (
+            intent.get("needs_data_query") or
+            (intent.get("needs_analysis") and intent.get("data_type", "") in 
+             ("groundwater", "rainfall", "pore_pressure", "gnss", "insar"))
+        )
+        if should_query_db:
             monitoring_context = await self._query_monitoring_data(
                 data_type=intent.get("data_type", "groundwater"),
                 query=intent.get("analysis_query", ""),
@@ -981,8 +998,10 @@ class ResearchAgent:
         self.implicit_feedback.record_query(self.session_id, user_input, self.user_id)
 
         if system_msg_content:
-            self.messages.insert(0, Message(role="system", content=system_msg_content))
+           self.messages.insert(0, Message(role="system", content=system_msg_content))
 
+        # 修剪上下文，防止累计过多导致 LLM 调用变慢
+        self._context_manager.trim_context(self.messages)
 
         full_content = ""
         async for chunk in llm.stream_chat(self.messages):
@@ -1030,6 +1049,18 @@ class ResearchAgent:
                 return {"success": False, "code": "", "result": {}, "error": f"数据读取失败: {err}"}
             if df is not None:
                 sandbox_context = dataframe_to_sandbox_context(df)
+
+        # If no file_id but data_type is a known monitoring type, auto-load from DB
+        if not file_id and data_type in ("groundwater", "rainfall", "pore_pressure", "gnss", "insar"):
+            try:
+                from backend.analysis.monitoring_service import get_all_data_for_analysis
+                from backend.analysis.data_loader import dataframe_to_sandbox_context, extract_data_schema
+                monitoring_df = await get_all_data_for_analysis(data_type)
+                if monitoring_df is not None and not monitoring_df.empty:
+                    sandbox_context = dataframe_to_sandbox_context(monitoring_df)
+                    data_schema = extract_data_schema(monitoring_df)
+            except Exception as e:
+                logger.warning("Failed to load monitoring data for sandbox: %s", e)
 
         if use_cache and not sandbox_context:
             cache = QueryCache()
@@ -1151,6 +1182,37 @@ class ResearchAgent:
         else:
             self._optimization_enabled = not self._optimization_enabled
         return self._optimization_enabled
+
+    # ---- 上下文管理接口 ----
+
+    def get_context_stats(self) -> dict:
+        """获取上下文管理的统计信息"""
+        return {
+            "session_id": self.session_id,
+            "current_messages": len(self.messages),
+            "current_rounds": sum(1 for m in self.messages if m.role in ("user", "assistant")),
+            "estimated_tokens": sum(len(m.content) // 4 + 1 for m in self.messages),
+            "context_manager": self._context_manager.get_stats(),
+        }
+
+    def toggle_context_management(self, enabled: bool | None = None) -> bool:
+        """启用/禁用上下文管理"""
+        if enabled is not None:
+            self._context_manager.enabled = enabled
+        else:
+            self._context_manager.enabled = not self._context_manager.enabled
+        return self._context_manager.enabled
+
+    def configure_context_manager(self, **kwargs) -> dict:
+        """动态调整上下文管理参数。
+
+        支持的参数: max_rounds, max_tokens, reserve_recent_rounds, strategy
+        返回当前配置。
+        """
+        for key in ("max_rounds", "max_tokens", "reserve_recent_rounds", "strategy"):
+            if key in kwargs:
+                setattr(self._context_manager, key, kwargs[key])
+        return self._context_manager.to_config()
 
     # ============================================================
     # ReAct loop

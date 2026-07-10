@@ -144,6 +144,9 @@ def dataframe_to_sandbox_context(df: pd.DataFrame) -> dict[str, Any]:
     along with column metadata.
     """
     import json
+    # Include named index (e.g. DatetimeIndex from monitoring data) as a regular column
+    if df.index.name is not None and df.index.name not in df.columns:
+        df = df.reset_index()
     records = df.to_dict(orient="records")
     serializable_records = json.loads(json.dumps(records, default=str, ensure_ascii=False))
     return {

@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 import csv
 import io
+from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field, field_validator
@@ -174,6 +176,9 @@ def _validate_table(engine, table: str) -> list[str]:
             status_code=404,
             detail="Table '%s' not found. Available: %s" % (table, ", ".join(valid)),
         )
+def _get_text_columns(columns: list[dict]) -> list[str]:
+    return [c["name"] for c in columns if "CHAR" in c["type"].upper() or "TEXT" in c["type"].upper()]
+
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────
