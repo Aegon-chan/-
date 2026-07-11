@@ -110,7 +110,15 @@ def _load_local_messages(session_id: str) -> list:
 def _save_messages_locally(session_id: str, messages: list) -> None:
     store = _load_local_store()
     existing = store["messages"].get(session_id, [])
-    existing.extend(messages)
+    # Dedup: skip messages already stored (by role+content fingerprint)
+    seen = set()
+    for m in existing:
+        seen.add((m.get("role",""), m.get("content","")[:200]))
+    for msg in messages:
+        fp = (msg.get("role",""), msg.get("content","")[:200])
+        if fp not in seen:
+            seen.add(fp)
+            existing.append(msg)
     store["messages"][session_id] = existing
     _save_local_store(store)
 
@@ -403,6 +411,10 @@ def _add_image_downloads(column_el, markdown_text):
     matches = list(re.finditer(pattern, markdown_text))
     if not matches:
         return
+
+    # Filter to only image URLs (extensions or base64 data URIs)
+    _img_exts = ('.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico')
+    matches = [m for m in matches if m.group(2).lower().endswith(_img_exts) or m.group(2).startswith('data:image/')]
 
     with column_el:
         for match in matches:

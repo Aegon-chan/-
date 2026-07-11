@@ -1,4 +1,4 @@
-"""Enhanced code execution sandbox.
+﻿"""Enhanced code execution sandbox.
 
 Provides safe isolated execution for AI-generated code with:
 - Result capture (stdout, figures, data)
@@ -115,7 +115,17 @@ def _get_python_exe() -> str:
         for c in candidates:
             if os.path.exists(c):
                 return c
-        logger.warning("PyInstaller env: no bundled Python found")
+        # Fallback: search system PATH for a Python interpreter
+        import shutil as _shutil
+        for name in ["python", "python3"]:
+            found = _shutil.which(name)
+            if found:
+                logger.warning("PyInstaller: using system Python %s", found)
+                return found
+        raise RuntimeError(
+            "PyInstaller env: no Python interpreter found. "
+            "Sandbox requires a bundled or system Python."
+        )
     return exe
 
 
@@ -127,6 +137,13 @@ class CodeSandbox:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as _plt
+        # MPL compat: remap removed labels= kwarg to tick_labels=
+        _plt_boxplot_orig = _plt.boxplot
+        def _plt_boxplot_compat(x, *args, **kwargs):
+            if 'labels' in kwargs and 'tick_labels' not in kwargs:
+                kwargs['tick_labels'] = kwargs.pop('labels')
+            return _plt_boxplot_orig(x, *args, **kwargs)
+        _plt.boxplot = _plt_boxplot_compat
         import warnings
         warnings.filterwarnings("ignore", category=UserWarning)
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -176,9 +193,35 @@ class CodeSandbox:
             _sys.stdout = _old_stdout
             __sandbox_results["_stdout"] = _stdout_capture.getvalue()
             _save_fig("fig_final")
+        import math as _math
+        def _sanitize_for_json(obj):
+            if obj is None:
+                return None
+            if isinstance(obj, (bool, int, float, str)):
+                if isinstance(obj, float):
+                    if _math.isnan(obj) or _math.isinf(obj):
+                        return None
+                return obj
+            if isinstance(obj, (_np.integer,)):
+                return int(obj)
+            if isinstance(obj, (_np.floating,)):
+                v = float(obj)
+                if _math.isnan(v) or _math.isinf(v):
+                    return None
+                return v
+            if isinstance(obj, (_np.ndarray,)):
+                return [_sanitize_for_json(x) for x in obj.tolist()]
+            if isinstance(obj, dict):
+                return {str(k): _sanitize_for_json(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [_sanitize_for_json(x) for x in obj]
+            try:
+                return str(obj)
+            except Exception:
+                return None
         import json as _json
         print("<<SANDBOX_RESULT>>")
-        print(_json.dumps(__sandbox_results))
+        print(_json.dumps(__sandbox_results, default=_sanitize_for_json))
         print("<<SANDBOX_RESULT_END>>")
     """)
 
@@ -214,7 +257,8 @@ class CodeSandbox:
                 [_get_python_exe(), str(script_path)],
                 input=input_data,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.timeout,
                 cwd=str(self.work_dir),
                 env=self._sandbox_env(),

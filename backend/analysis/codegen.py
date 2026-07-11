@@ -124,8 +124,10 @@ def validate_generated_code(code: str) -> tuple[bool, str]:
         "requests", "urllib",
         "__builtins__", "compile(",
     ]
+    # Strip Python comments before checking dangerous patterns
+    code_no_comments = re.sub(r'#.*$', '', code, flags=re.MULTILINE)
     for pattern in dangerous:
-        if pattern in code:
+        if pattern in code_no_comments:
             return False, f"检测到危险操作: {pattern}"
     return True, ""
 

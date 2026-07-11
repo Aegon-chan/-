@@ -95,4 +95,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-settings.ensure_dirs()
+# ensure_dirs() called in main.py lifespan

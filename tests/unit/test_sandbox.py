@@ -66,3 +66,39 @@ class TestCodeSandbox:
         r2 = sandbox.execute_python("x = 10; y = x + 5; print(y)")
         assert r2.success is True
         assert "15" in r2.stdout
+
+class TestBoxplotCompat:
+    """Test that the sandbox boxplot compat patch handles labels= param."""
+
+    def test_boxplot_with_labels_kwarg(self):
+        """plt.boxplot with labels= should work (auto-remapped to tick_labels)."""
+        from backend.core.sandbox import CodeSandbox
+        sandbox = CodeSandbox(timeout=10)
+        code = (
+            "import numpy as np\n"
+            "data = [np.random.normal(0, std, 100) for std in range(1, 4)]\n"
+            "_plt.boxplot(data, labels=['A', 'B', 'C'])\n"
+            "_save_fig('boxplot_test')\n"
+            "print('done')\n"
+        )
+        result = sandbox.execute_python(code)
+        assert result.success, f"Boxplot with labels= failed: {result.stderr}"
+        assert len(result.figures) >= 1, "Should have generated at least 1 figure"
+        sandbox.clean()
+
+    def test_boxplot_with_tick_labels_still_works(self):
+        """plt.boxplot with tick_labels= should still work normally."""
+        from backend.core.sandbox import CodeSandbox
+        sandbox = CodeSandbox(timeout=10)
+        code = (
+            "import numpy as np\n"
+            "data = [np.random.normal(0, std, 100) for std in range(1, 4)]\n"
+            "_plt.boxplot(data, tick_labels=['X', 'Y', 'Z'])\n"
+            "_save_fig('boxplot_ticklabels')\n"
+            "print('done')\n"
+        )
+        result = sandbox.execute_python(code)
+        assert result.success, f"Boxplot with tick_labels= failed: {result.stderr}"
+        assert len(result.figures) >= 1, "Should have generated at least 1 figure"
+        sandbox.clean()
+

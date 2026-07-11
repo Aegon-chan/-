@@ -21,7 +21,10 @@ def _async_sqlite_url(url: str) -> str:
 async_engine = create_async_engine(
     _async_sqlite_url(settings.monitoring_db_url),
     echo=settings.app_debug,
-    future=True,
+    pool_size=10,
+    max_overflow=20,
+    pool_recycle=3600,
+    pool_pre_ping=True,    future=True,
 )
 
 AsyncSessionLocal = async_sessionmaker(

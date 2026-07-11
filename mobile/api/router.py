@@ -10,6 +10,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+import json
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("research_agent.mobile")
@@ -98,21 +99,18 @@ async def mobile_models():
 async def mobile_chat(body: MobileChatRequest):
     """Send a message and get a streaming or non-streaming response."""
     from backend.core.agent import ResearchAgent
-    from backend.api.chat import _process_message
-
+    
     try:
-        agent = ResearchAgent(session_id=body.session_id, user_id=body.user_id)
-        if body.model_id:
-            agent.set_model(body.model_id)
-
-        response = await _process_message(
-            message=body.message,
+        agent = ResearchAgent(
             session_id=body.session_id,
             user_id=body.user_id,
-            model_id=body.model_id or "",
-            attachments=None,
+            model_id=body.model_id,
         )
-        return {"success": True, "response": response}
+        collected = []
+        async for token in agent.stream_chat(body.message):
+            collected.append(token)
+        response_text = "".join(collected)
+        return {"success": True, "response": response_text}
     except Exception as e:
         logger.exception("Mobile chat error")
         raise HTTPException(status_code=500, detail=str(e))
@@ -157,7 +155,7 @@ async def mobile_search_knowledge(body: MobileSearchRequest):
     from backend.retrieval.vector_store import get_vector_store
     try:
         store = get_vector_store()
-        results = store.search(body.query, top_k=body.top_k)
+        results = await asyncio.to_thread(store.search, body.query, top_k=body.top_k)
         return {
             "query": body.query,
             "results": [
@@ -181,7 +179,10 @@ async def mobile_execute_analysis(body: MobileAnalysisRequest):
     from backend.core.agent import ResearchAgent
     try:
         agent = ResearchAgent(session_id=body.session_id, user_id=body.user_id)
-        result = agent.execute_analysis(body.analysis_query)
+        result = await agent.nl2query_execute(
+            query=body.analysis_query,
+            data_type="gnss",
+        )
         return {"success": True, "result": result}
     except Exception as e:
         logger.exception("Mobile analysis error")

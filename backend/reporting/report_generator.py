@@ -270,7 +270,8 @@ class ReportGenerator:
             weasyprint.HTML(string=html).write_pdf(str(out_path))
             logger.info("PDF report saved (weasyprint): %s", out_path)
         except Exception:
-            logger.warning("weasyprint unavailable; HTML report saved instead.")
+            logger.warning("weasyprint unavailable: saving as HTML instead of PDF")
             out_path = out_path.with_suffix(".html")
             out_path.write_text(html, encoding="utf-8")
+            return str(out_path.resolve())
         return str(out_path.resolve())

@@ -1,7 +1,7 @@
 """会话管理 API"""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -147,7 +147,7 @@ async def update_session(
         session.title = body.title
     if body.model_id is not None:
         session.model_id = body.model_id
-    session.updated_at = datetime.utcnow()
+    session.updated_at = datetime.now(timezone.utc)
     await db.flush()
 
     msg_count_q = select(func.count(Message.id)).where(
@@ -191,7 +191,7 @@ async def append_messages(
         saved.append(message)
 
     # Update session timestamp
-    session.updated_at = datetime.utcnow()
+    session.updated_at = datetime.now(timezone.utc)
     await db.flush()
 
     return {

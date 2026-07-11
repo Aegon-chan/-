@@ -154,7 +154,7 @@ def _get_columns(engine, table: str) -> list[dict]:
 def _get_row_count(engine, table: str) -> int:
     try:
         with engine.connect() as conn:
-            result = conn.execute(sa_text('SELECT COUNT(*) FROM "%s"' % table))
+            result = conn.execute(sa_text("SELECT COUNT(*) FROM " + table))
             return result.scalar() or 0
     except Exception as e:
         logger.warning("Could not count rows for %s: %s", table, e)
@@ -259,7 +259,7 @@ async def browse_table(
     col_names = [c["name"] for c in columns]
     pk_col = _get_table_pk(engine, table)
     with engine.connect() as conn:
-        base = 'FROM "%s"' % table
+        base = "FROM " + table
         params = {}
         text_cols = [c["name"] for c in columns if "CHAR" in c["type"].upper() or "TEXT" in c["type"].upper()]
         if search and text_cols:
@@ -269,7 +269,7 @@ async def browse_table(
         count_sql = "SELECT COUNT(*) %s" % base
         total = conn.execute(sa_text(count_sql), params).scalar() or 0
         offset = (page - 1) * page_size
-        order = '"%s"' % pk_col if pk_col else '"%s"' % col_names[0]
+        order = pk_col if pk_col else '"%s"' % col_names[0]
         data_sql = "SELECT * %s ORDER BY %s LIMIT :limit OFFSET :offset" % (base, order)
         params["limit"] = page_size
         params["offset"] = offset
@@ -347,7 +347,7 @@ async def delete_by_condition(database: str, table: str, body: ConditionDeleteRe
         matched = conn.execute(count_sql, params).scalar() or 0
         sample_rows = []
         if matched > 0:
-            order = '"%s"' % pk_col if pk_col else '"%s"' % col_names[0]
+            order = pk_col if pk_col else '"%s"' % col_names[0]
             sample_sql = sa_text('SELECT * FROM "%s" WHERE %s ORDER BY %s LIMIT 5' % (table, where_clause, order))
             sample_raw = conn.execute(sample_sql, params).fetchall()
             for row in sample_raw:

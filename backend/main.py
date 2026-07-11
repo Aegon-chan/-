@@ -19,14 +19,17 @@ from backend.config import settings
 from backend.db.session import async_engine as engine
 from backend.core.exceptions import AppException
 
-_start_time: float = 0.0
+_start_time = time.time()
 
 logger = logging.getLogger("research_agent")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期管理"""
+    """
+    # Ensure all data directories exist at startup
+    settings.ensure_dirs()
+    #应用生命周期管理"""
     # 启动：数据库表由 Alembic migration 管理（scripts/setup.ps1 中执行）
 
     # 启动：注册 AI 模型
@@ -42,7 +45,7 @@ async def lifespan(app: FastAPI):
             exists = result.scalar()
             if not exists:
                 import uuid
-                from datetime import datetime
+                from datetime import datetime, timezone
                 _conn.execute(
                     _text("INSERT INTO users (id, username, display_name, created_at, updated_at) "
                            "VALUES (:id, :username, :display_name, :created_at, :updated_at)"),
@@ -50,8 +53,8 @@ async def lifespan(app: FastAPI):
                         "id": str(uuid.uuid4()),
                         "username": "default",
                         "display_name": "Default User",
-                        "created_at": datetime.utcnow(),
-                        "updated_at": datetime.utcnow(),
+                        "created_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc),
                     }
                 )
                 _conn.commit()
@@ -228,7 +231,7 @@ async def health_check():
         "version": "0.1.0",
         "env": settings.app_env,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "uptime": time.time() - _start_time if "_start_time" in dir() else 0,
+        "uptime": round(time.time() - _start_time, 1),
         "checks": checks,
     }
 

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, JSON
 from sqlalchemy.orm import relationship
@@ -26,8 +26,8 @@ class User(Base):
     id = Column(String(36), primary_key=True, default=_uuid)
     username = Column(String(64), unique=True, nullable=False)
     display_name = Column(String(128), default="")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
 
@@ -42,8 +42,8 @@ class Session(Base):
     model_id = Column(String(64), default="deepseek-chat")
     system_prompt = Column(Text, default="")
     metadata_ = Column("metadata", JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="sessions")
     messages = relationship("Message", back_populates="session", cascade="all, delete-orphan",
@@ -61,7 +61,7 @@ class Message(Base):
     model_id = Column(String(64), default="")
     token_usage = Column(JSON, default=dict)
     metadata_ = Column("metadata", JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     session = relationship("Session", back_populates="messages")
     feedback = relationship("Feedback", back_populates="message", uselist=False)
@@ -76,7 +76,7 @@ class Feedback(Base):
     rating = Column(Integer, default=0)
     comment = Column(Text, default="")
     tags = Column(JSON, default=list)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     message = relationship("Message", back_populates="feedback")
 
@@ -93,8 +93,8 @@ class Memory(Base):
     weight = Column(Float, default=1.0)
     source = Column(String(64), default="")
     metadata_ = Column("metadata", JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 class AnalysisTask(Base):
@@ -108,5 +108,5 @@ class AnalysisTask(Base):
     status = Column(String(16), default="pending")  # pending / running / completed / failed
     result_ = Column("result", JSON, default=dict)
     error = Column(Text, default="")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at = Column(DateTime, nullable=True)

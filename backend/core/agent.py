@@ -157,6 +157,10 @@ def _process_attachments(attachments: list[dict] | None) -> list[ContentPart]:
     return parts
 
 
+# Global singleton optimization threads per user_id
+_optimization_threads: dict = {}
+_optimization_locks: dict = {}
+
 class ResearchAgent:
     """自成长型科研数据分析智能体。"""
 
@@ -256,8 +260,13 @@ class ResearchAgent:
     # ═══════════════════════════ 后台优化线程 ═══════════════════════════
 
     def _start_optimization_thread(self):
-        """启动后台优化守护线程。"""
+        """启动后台优化守护线程 (per-user_id singleton)"""
+        global _optimization_threads, _optimization_locks
         if self._optimization_thread and self._optimization_thread.is_alive():
+            return
+        # Singleton: reuse existing thread for this user_id
+        if self.user_id in _optimization_threads and _optimization_threads[self.user_id].is_alive():
+            self._optimization_thread = _optimization_threads[self.user_id]
             return
 
         def _run():
@@ -270,6 +279,7 @@ class ResearchAgent:
 
         self._optimization_thread = threading.Thread(target=_run, daemon=True)
         self._optimization_thread.start()
+        _optimization_threads[self.user_id] = self._optimization_thread
         logger.info("Background optimization thread started (interval=%s min, user=%s)",
                      OPTIMIZATION_INTERVAL_MINUTES, self.user_id)
 
@@ -603,6 +613,7 @@ class ResearchAgent:
 
     def _format_analysis_summary(self, result: dict) -> str:
         """将 NL2Query 分析结果格式化为结构化文本，供 LLM 理解。"""
+        fence = "```"
         if not isinstance(result, dict):
             return "Analysis failed: result is not dict (" + type(result).__name__ + ")"
         if not result.get("success"):
@@ -645,6 +656,7 @@ class ResearchAgent:
 
     def _format_analysis_stream(self, result: dict) -> str:
         """将分析结果格式化为面向用户的流式输出文本。"""
+        fence = "```"
         if not isinstance(result, dict):
             return "Analysis failed: result is not dict (" + type(result).__name__ + ")"
         if not result.get("success"):
@@ -1087,9 +1099,10 @@ class ResearchAgent:
 
     async def _retrieve_context(self, query: str) -> str:
         try:
+            import asyncio
             from backend.retrieval.vector_store import get_vector_store
             store = get_vector_store()
-            results = await store.search(query, top_k=3)
+            results = await asyncio.to_thread(store.search, query, top_k=3)
             if results:
                 return "\n---\n".join(r["content"] for r in results)
         except Exception as e:
@@ -1248,7 +1261,7 @@ class ResearchAgent:
         try:
             from backend.retrieval.vector_store import get_vector_store
             store = get_vector_store()
-            results = await store.search(query, top_k=3)
+            results = store.search(query, top_k=3)
             if not results:
                 return "No relevant content found"
             lines = []

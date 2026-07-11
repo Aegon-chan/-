@@ -1,12 +1,12 @@
 import requests, json, sys
-BASE = "http://127.0.0.1:8000"
+BASE = "http://127.0.0.1:8010"
 
 resp = requests.post(f"{BASE}/api/v1/sessions/", json={"user_id": "default", "title": "test", "model_id": "deepseek-chat"})
 assert resp.status_code == 200, f"Session creation failed: {resp.text}"
 sid = resp.json()["id"]
 print(f"[PASS] 1. Session created: {sid}")
 
-resp2 = requests.post(f"{BASE}/api/v1/chat/completions", json={"session_id": sid, "message": "×ÔÎÒ½éÉÜ"})
+resp2 = requests.post(f"{BASE}/api/v1/chat/completions", json={"session_id": sid, "message": "è‡ªæˆ‘ä»‹ç»"})
 assert resp2.status_code == 200, f"Chat failed: {resp2.text}"
 content = resp2.json().get("content", "")
 print(f"[PASS] 2. Chat reply ({len(content)} chars)")
