@@ -202,8 +202,9 @@ async def health_check():
 
     checks = {"database": False, "models_registered": 0, "disk_space": "unknown"}
     try:
+        from sqlalchemy import text
         with sync_engine.connect() as conn:
-            conn.execute(sync_engine.text("SELECT 1"))
+            conn.execute(text("SELECT 1"))
             checks["database"] = True
     except Exception:
         checks["database"] = False
@@ -261,8 +262,9 @@ async def metrics_endpoint():
     lines.append("# TYPE research_agent_database_up gauge")
     try:
         from backend.db.session import sync_engine
+        from sqlalchemy import text
         with sync_engine.connect() as conn:
-            conn.execute(sync_engine.text("SELECT 1"))
+            conn.execute(text("SELECT 1"))
         lines.append("research_agent_database_up 1")
     except Exception:
         lines.append("research_agent_database_up 0")

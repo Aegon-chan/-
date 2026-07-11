@@ -1,4 +1,4 @@
-﻿"""Mobile API router."""
+"""Mobile API router."""
 from .router import router
 
 __all__ = ["router"]

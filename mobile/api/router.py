@@ -1,4 +1,4 @@
-﻿"""Mobile API adapter - lightweight REST endpoints for mobile clients.
+"""Mobile API adapter - lightweight REST endpoints for mobile clients.
 
 These endpoints wrap the full backend services and return
 minimal JSON payloads optimized for mobile consumption.

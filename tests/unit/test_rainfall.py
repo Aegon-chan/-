@@ -1,4 +1,4 @@
-﻿"""降雨分析模块单元测试"""
+"""降雨分析模块单元测试"""
 from __future__ import annotations
 
 import numpy as np

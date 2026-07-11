@@ -1,4 +1,4 @@
-﻿"""Session adapter for mobile API - wraps backend session CRUD."""
+"""Session adapter for mobile API - wraps backend session CRUD."""
 
 from __future__ import annotations
 

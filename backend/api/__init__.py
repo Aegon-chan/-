@@ -13,6 +13,7 @@ from .feedback import router as feedback_router
 from .self_growth import router as self_growth_router
 from .. import uploads
 from .database_admin import router as database_admin_router
+from .config import router as config_router
 
 router = APIRouter()
 router.include_router(chat_router, prefix="/chat", tags=["general"])
@@ -24,6 +25,7 @@ router.include_router(feedback_router, prefix="/feedback", tags=["general"])
 router.include_router(self_growth_router, prefix="/self-growth", tags=["self_growth"])
 router.include_router(uploads.router, prefix="/upload", tags=["general"])
 router.include_router(database_admin_router, prefix="/db", tags=["general"])
+router.include_router(config_router, prefix="/config", tags=["config"])
 
 
 @router.get("/ping")

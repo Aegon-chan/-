@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Validation tests for the 13 bug fixes."""
 from __future__ import annotations
 

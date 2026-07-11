@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 
 # Set matplotlib backend to Agg for headless rendering

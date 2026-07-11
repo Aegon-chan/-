@@ -475,7 +475,6 @@ async def import_from_df(
                 sid = station_id_map.get(sc)
                 if not sid:
                     continue
-                rec["batch_id"] = batch_id
                 obj = model_class(station_id=sid, **rec)
                 objs.append(obj)
 
@@ -489,8 +488,8 @@ async def import_from_df(
 
             # Batch insert
             for i in range(0, len(objs), BATCH_SIZE):
-                batch = objs[i:i + BATCH_SIZE]
-                db.add_all(batch)
+                chunk = objs[i:i + BATCH_SIZE]
+                db.add_all(chunk)
                 await db.flush()
 
             await db.commit()

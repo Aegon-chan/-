@@ -1,4 +1,4 @@
-﻿"""Mobile application adapter.
+"""Mobile application adapter.
 
 Provides lightweight REST API endpoints for mobile clients.
 """

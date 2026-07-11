@@ -451,50 +451,47 @@ def _log_usage(event_type, detail=""):
         f.write("[" + datetime.now().isoformat() + "] " + str(event_type) + " | " + str(detail) + "\n")
 
 # ---- User config persistence ----
-_USER_CONFIG_PATH = os.path.join("data", "user_config.json")
-
-def _load_user_config():
-    import json
+def _fetch_api_keys_status() -> dict:
+    """Fetch API key config status from backend. Returns {deepseek: bool, kimi: bool, openai: bool}."""
     try:
-        if os.path.exists(_USER_CONFIG_PATH):
-            with open(_USER_CONFIG_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
+        import requests
+        resp = requests.get(f"{_BACKEND_URL}/api/v1/config/api-keys", timeout=5)
+        if resp.status_code == 200:
+            return resp.json()
     except Exception:
         pass
-    return {}
+    return {"deepseek": False, "kimi": False, "openai": False}
 
-def _save_user_config(config):
-    import json
-    os.makedirs(os.path.dirname(_USER_CONFIG_PATH), exist_ok=True)
-    with open(_USER_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2, ensure_ascii=False)
 
-def _apply_user_config():
-    config = _load_user_config()
-    keys_map = {
-        "deepseek_key": "DEEPSEEK_API_KEY",
-        "kimi_key": "KIMI_API_KEY",
-        "openai_key": "OPENAI_API_KEY",
-    }
-    changed = False
-    for cfg_key, env_key in keys_map.items():
-        val = config.get(cfg_key, "")
-        if val and val != os.environ.get(env_key, ""):
-            os.environ[env_key] = val
-            changed = True
-    if changed:
-        from backend.config import settings
-        settings.deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY", "")
-        settings.kimi_api_key = os.environ.get("KIMI_API_KEY", "")
-        settings.openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+def _save_api_keys_to_backend(keys: dict) -> bool:
+    """Save API keys to backend encrypted storage. Returns True on success."""
+    try:
+        import requests
+        resp = requests.post(
+            f"{_BACKEND_URL}/api/v1/config/api-keys",
+            json=keys,
+            timeout=10,
+        )
+        return resp.status_code == 200
+    except Exception as e:
+        logger.warning("Failed to save API keys to backend: %s", e)
+        return False
+
 
 def _check_api_keys():
-    from backend.models.registry import ModelRegistry
-    models = ModelRegistry.list_models()
+    """Return list of configured model IDs."""
+    status = _fetch_api_keys_status()
     configured = []
-    for m in models:
+    mapping = {"deepseek": "deepseek-chat", "kimi": "moonshot-v1", "openai": "gpt-4o"}
+    for model, model_id in mapping.items():
+        if status.get(model, False):
+            configured.append(model_id)
+    # Also check ModelRegistry for already-registered models
+    from backend.models.registry import ModelRegistry
+    for m in ModelRegistry.list_models():
         if m["type"] == "llm" and m.get("status", "active") == "active":
-            configured.append(m["model_id"])
+            if m["model_id"] not in configured:
+                configured.append(m["model_id"])
     if not configured:
         from backend.config import settings
         if settings.deepseek_api_key and "your-" not in settings.deepseek_api_key:
@@ -505,14 +502,15 @@ def _check_api_keys():
             configured.append("gpt-4o")
     return configured
 
-# Apply user config on startup (overrides .env)
-_apply_user_config()
-from backend.models import init_models
-init_models()
-
 
 
 # ═══════════════════════════ 反馈助手 ═══════════════════════════
+
+
+
+# Initialize models on frontend startup: read from DB (encrypted) or .env fallback
+from backend.models import reload_models
+reload_models()
 
 
 def _submit_feedback(rating, label, up_btn, down_btn, status_label):
@@ -627,6 +625,43 @@ def chat_page():
     _drawer()
     _header()
 
+    # Check for API keys and show setup dialog if needed
+    status = _fetch_api_keys_status()
+    has_any_key = status.get("deepseek") or status.get("kimi") or status.get("openai")
+    if not has_any_key:
+        with ui.dialog() as setup_dialog, ui.card().classes("p-6 gap-4"):
+            ui.label("Welcome to Research Agent").classes("text-xl font-bold")
+            ui.label("Please configure at least one API Key to enable AI capabilities").classes("text-sm text-gray-500")
+
+            d_deepseek = ui.input("DeepSeek API Key", password=True).classes("w-full").props("clearable")
+            d_kimi = ui.input("Kimi API Key", password=True).classes("w-full").props("clearable")
+            d_openai = ui.input("OpenAI API Key", password=True).classes("w-full").props("clearable")
+
+            d_status = ui.label("").classes("text-sm")
+
+            def d_save_and_close():
+                keys = {}
+                if d_deepseek.value:
+                    keys["deepseek_api_key"] = d_deepseek.value.strip()
+                if d_kimi.value:
+                    keys["kimi_api_key"] = d_kimi.value.strip()
+                if d_openai.value:
+                    keys["openai_api_key"] = d_openai.value.strip()
+                if not keys:
+                    d_status.set_text("Please enter at least one API Key")
+                    d_status.classes("text-red-500")
+                    return
+                if _save_api_keys_to_backend(keys):
+                    d_status.set_text("Config saved successfully")
+                    d_status.classes("text-green-500")
+                    ui.notify("API Key configured successfully", type="positive")
+                    setup_dialog.close()
+                else:
+                    d_status.set_text("Save failed, check backend service")
+                    d_status.classes("text-red-500")
+                # Reload models in the frontend process so local ModelRegistry picks up new keys
+                from backend.models import reload_models
+                reload_models()
 
     # Inject chat-page layout fix (height cascade so container fills viewport)
     ui.add_body_html('''<style>
@@ -1369,17 +1404,17 @@ def settings_page():
 
             deepseek_input = ui.input(
                 label="DeepSeek API Key",
-                value=_load_user_config().get("deepseek_key", ""),
+                value="",
                 password=True,
             ).classes("w-full").props("clearable")
             kimi_input = ui.input(
                 label="Kimi API Key",
-                value=_load_user_config().get("kimi_key", ""),
+                value="",
                 password=True,
             ).classes("w-full").props("clearable")
             openai_input = ui.input(
                 label="OpenAI API Key",
-                value=_load_user_config().get("openai_key", ""),
+                value="",
                 password=True,
             ).classes("w-full").props("clearable")
 
@@ -1387,25 +1422,31 @@ def settings_page():
             test_status = ui.label("").classes("text-sm")
 
             def do_save_keys():
-                cfg = {}
+                keys = {}
                 if deepseek_input.value:
-                    cfg["deepseek_key"] = deepseek_input.value.strip()
+                    keys["deepseek_api_key"] = deepseek_input.value.strip()
                 if kimi_input.value:
-                    cfg["kimi_key"] = kimi_input.value.strip()
+                    keys["kimi_api_key"] = kimi_input.value.strip()
                 if openai_input.value:
-                    cfg["openai_key"] = openai_input.value.strip()
-                _save_user_config(cfg)
-                _apply_user_config()
-                from backend.models import init_models
-                init_models()
-                config_status.set_text("保存成功")
-                config_status.classes("text-green-500")
+                    keys["openai_api_key"] = openai_input.value.strip()
+                if _save_api_keys_to_backend(keys):
+                    config_status.set_text("Saved successfully")
+                    config_status.classes("text-green-500")
+                    ui.notify("API Key saved and activated", type="positive")
+                else:
+                    config_status.set_text("Save failed")
+                    config_status.classes("text-red-500")
+                    ui.notify("Save failed, check backend service", type="negative")
+                # Reload models in the frontend process so local ModelRegistry picks up new keys
+                from backend.models import reload_models
+                reload_models()
+
 
             def do_test_connection():
-                _apply_user_config()
-                from backend.models import init_models
-                init_models()
                 from backend.models.registry import ModelRegistry
+                # Ensure local ModelRegistry has latest models
+                from backend.models import reload_models
+                reload_models()
                 llm = ModelRegistry.get_llm_with_fallback()
                 if llm is None:
                     test_status.set_text("连接失败: 无可用模型")

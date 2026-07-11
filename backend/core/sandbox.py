@@ -1,4 +1,4 @@
-﻿"""Enhanced code execution sandbox.
+"""Enhanced code execution sandbox.
 
 Provides safe isolated execution for AI-generated code with:
 - Result capture (stdout, figures, data)

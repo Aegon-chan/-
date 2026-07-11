@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Integration test for the new agent chat + analysis + report pipeline."""
 import asyncio, os, sys, json
 sys.path.insert(0, r"C:\Users\24622\Desktop\科研Agent")
