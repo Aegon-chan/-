@@ -1,4 +1,4 @@
-﻿"""
+"""
 向量数据库封装。
 
 基于 ChromaDB + BGE 中文 Embedding 模型的文档向量化与语义检索服务。
@@ -116,7 +116,7 @@ class VectorStore:
 
     # ── 文档操作 ──────────────────────────────────────────────────
 
-    async def add_document(
+    def add_document(
         self,
         doc_id: str,
         content: str,
@@ -136,7 +136,7 @@ class VectorStore:
             ids=[f"{doc_id}_{i}" for i in range(len(chunks))],
         )
 
-    async def search(
+    def search(
         self,
         query: str,
         top_k: int = 5,
@@ -160,7 +160,7 @@ class VectorStore:
                 })
         return docs
 
-    async def delete_document(self, doc_id: str, collection_name: str = "knowledge_base") -> None:
+    def delete_document(self, doc_id: str, collection_name: str = "knowledge_base") -> None:
         """删除文档"""
         collection = self._get_or_create(collection_name)
         collection.delete(where={"doc_id": doc_id})

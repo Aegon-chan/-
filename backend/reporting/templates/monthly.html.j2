@@ -1,0 +1,18 @@
+{% extends "base.html.j2" %}
+{% block content %}
+<div class="section">
+<h2>月度统计汇总</h2>
+<div class="content">{{ summary }}</div>
+</div>
+{% for section in sections %}
+<div class="section">
+<h2>{{ section.title }}</h2>
+<div class="content">{{ section.content | safe }}</div>
+{% if section.get("charts") %}<div class="chart-container">{{ section.charts[0] | safe }}</div>{% endif %}
+{% for table in section.get("tables", []) %}
+<table><thead><tr>{% for h in table.headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+<tbody>{% for row in table.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>
+{% endfor %}
+</div>
+{% endfor %}
+{% endblock %}

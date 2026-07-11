@@ -1,0 +1,2 @@
+- 多格式输出: HTML/DOCX/PDF
+- Plotly + Matplotlib 双图表引擎

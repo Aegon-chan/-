@@ -1,69 +1,212 @@
-# Research Agent â€” è‡ªæˆ‘æˆé•¿å‹AIæ•°æ®åˆ†æåŠ©æ‰‹
+# Research Agent -- ×ÔÎÒ³É³¤ĞÍ¿ÆÑĞÊı¾İ·ÖÎöÖúÊÖ
 
-é¢å‘åœ°è´¨å½¢å˜ç›‘æµ‹ã€æ°´æ–‡ç›‘æµ‹ç­‰ç§‘ç ”åœºæ™¯ï¼Œä¸€æ¬¾å…·å¤‡**è‡ªæˆ‘æˆé•¿èƒ½åŠ›**çš„AIæ•°æ®åˆ†æåŠ©æ‰‹ã€‚
+A self-evolving AI data analysis assistant for geological deformation monitoring, hydrological monitoring, and general scientific research scenarios. Built with FastAPI + NiceGUI + LangChain.
 
-## æ ¸å¿ƒèƒ½åŠ›
+The agent learns from user feedback, optimises its prompts, builds a long-term memory network, and can auto-trigger LoRA fine-tuning -- growing better with every interaction.
 
-| åŠŸèƒ½ | è¯´æ˜ |
-|------|------|
-| **å¤šæ¨¡å‹æ¥å…¥** | æ”¯æŒ DeepSeekã€KIMI ç­‰ä¸»æµ AI æ¨¡å‹ï¼Œå¯åŠ¨æ€åˆ‡æ¢ |
-| **ä¸“ä¸šæ•°æ®åˆ†æ** | è‡ªç„¶è¯­è¨€æŸ¥è¯¢åˆ†æ GNSS ä½ç§»ã€InSAR å½¢å˜ã€é›¨é‡ã€åœ°ä¸‹æ°´ä½ã€å­”éš™æ°´å‹åŠ›ç­‰æ•°æ® |
-| **çŸ¥è¯†æ£€ç´¢** | åŸºäº RAG çš„è§„èŒƒæ¡æ–‡ã€å†å²æ–‡çŒ®ã€ç›‘æµ‹æ¡ˆä¾‹è¯­ä¹‰æ£€ç´¢ |
-| **è‡ªåŠ¨æŠ¥å‘Š** | ä¸€é”®ç”Ÿæˆç›‘æµ‹æŠ¥å‘Šä¸ä¸“ä¸šåˆ†æå›¾è¡¨ |
-| **æ²™ç®±å®‰å…¨** | éš”ç¦»çš„ä»£ç æ‰§è¡Œç¯å¢ƒï¼Œä¿éšœæ•æ„Ÿæ“ä½œå®‰å…¨ |
-| **è‡ªæˆ‘æˆé•¿** | åŸºäºç”¨æˆ·åé¦ˆå’Œä»»åŠ¡ç»“æœä¼˜åŒ–è®°å¿†æƒé‡ã€æç¤ºè¯ï¼Œæ”¯æŒæ¨¡å‹å¾®è°ƒ |
-| **App å°è£…** | æ ¸å¿ƒåŠŸèƒ½æ‰“åŒ…ä¸ºæ¡Œé¢/ç§»åŠ¨ç«¯åº”ç”¨ |
+---
 
-## æŠ€æœ¯æ ˆ
+## Core Capabilities
 
-- **åç«¯**: Python FastAPI + SQLAlchemy + Alembic
-- **å‰ç«¯**: NiceGUIï¼ˆå¿«é€ŸåŸå‹ï¼‰â†’ React Native / Flutterï¼ˆç§»åŠ¨ç«¯ï¼‰
-- **AI å¼•æ“**: LangChain + å¤šæ¨¡å‹ Router + RAG
-- **å‘é‡å­˜å‚¨**: ChromaDB + BGE Embeddings
-- **è‡ªæˆ‘æˆé•¿**: è®°å¿†ç½‘ç»œ + Prompt ä¼˜åŒ– + LoRA å¾®è°ƒ
-- **æ²™ç®±**: Subprocess éš”ç¦» + Dockerï¼ˆç”Ÿäº§ç¯å¢ƒï¼‰
+| Capability | Description |
+|------------|-------------|
+| Multi-model LLM | DeepSeek, Kimi, OpenAI-compatible API, hot-swappable via registry |
+| Domain Analysis | NL-driven GNSS displacement, InSAR deformation, rainfall, groundwater, pore-pressure analysis |
+| RAG Knowledge Base | Semantic search over standards, literature, and cases via ChromaDB + BGE embeddings |
+| Auto Reporting | One-click monitoring reports in HTML / DOCX / PDF with built-in chart engine |
+| Code Sandbox | Isolated subprocess execution with resource limits, figure capture, and safe-package allowlist |
+| Self-Growth | Memory network, feedback-driven prompt optimisation, APE, and auto-triggered LoRA fine-tuning |
+| ReAct Reasoning | Think-Act-Observe loop with tool use (analysis, search, report generation) |
+| Desktop App | PyInstaller-packaged standalone exe with built-in backend |
 
-## å¿«é€Ÿå¼€å§‹
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|--------|-----------|
+| Backend | Python 3.12+, FastAPI, SQLAlchemy, Alembic |
+| Frontend | NiceGUI (desktop), API-driven (mobile) |
+| AI | LangChain, multi-model Router, ReAct pattern |
+| Vector Store | ChromaDB + BAAI/bge-small-zh-v1.5 |
+| Self-Growth | SQLite memory network, APE, LoRA (PEFT) |
+| Sandbox | Subprocess isolation, resource limits, whitelist |
+| Packaging | PyInstaller, Docker Compose |
+| CI/CD | GitHub Actions (pytest + ruff) |
+
+---
+
+## Project Structure
+
+```
+research-agent/
+©À©¤©¤ backend/                    # FastAPI ºó¶Ë·şÎñ
+©¦   ©À©¤©¤ main.py                 # Ó¦ÓÃÈë¿Ú£¬Â·ÓÉ×¢²á£¬ÖĞ¼ä¼ş
+©¦   ©À©¤©¤ config.py               # pydantic-settings ÅäÖÃ£¨.env£©
+©¦   ©À©¤©¤ uploads.py              # ÎÄ¼şÉÏ´«ÓëÎÄ±¾ÌáÈ¡
+©¦   ©À©¤©¤ api/                    # REST API Â·ÓÉ
+©¦   ©¦   ©À©¤©¤ chat.py             #   ¶Ô»°½Ó¿Ú
+©¦   ©¦   ©À©¤©¤ models.py           #   Ä£ĞÍ¹ÜÀíÓëÇĞ»»
+©¦   ©¦   ©À©¤©¤ sessions.py         #   »á»° CRUD
+©¦   ©¦   ©À©¤©¤ analysis.py         #   Êı¾İ·ÖÎöÖ´ĞĞ
+©¦   ©¦   ©À©¤©¤ knowledge.py        #   ÖªÊ¶¿â¹ÜÀí
+©¦   ©¦   ©À©¤©¤ feedback.py         #   ·´À¡ÊÕ¼¯
+©¦   ©¦   ©¸©¤©¤ self_growth.py      #   ×Ô³É³¤×´Ì¬²éÑ¯
+©¦   ©À©¤©¤ core/                   # ÖÇÄÜÌåºËĞÄÒıÇæ
+©¦   ©¦   ©À©¤©¤ agent.py            #   ResearchAgent ºËĞÄĞ­µ÷Æ÷
+©¦   ©¦   ©À©¤©¤ memory.py           #   ³¤ÆÚ¼ÇÒä´æ´¢
+©¦   ©¦   ©À©¤©¤ strategy.py         #   ²ßÂÔ¿â
+©¦   ©¦   ©À©¤©¤ sandbox.py          #   ´úÂëÖ´ĞĞÉ³Ïä
+©¦   ©¦   ©¸©¤©¤ exceptions.py       #   Í³Ò»Òì³£´¦Àí
+©¦   ©À©¤©¤ models/                 # AI Ä£ĞÍÊÊÅä²ã
+©¦   ©¦   ©À©¤©¤ base.py             #   BaseLLM / BaseEmbedding ³éÏó½Ó¿Ú
+©¦   ©¦   ©À©¤©¤ registry.py         #   Ä£ĞÍ×¢²á±íÓë fallback
+©¦   ©¦   ©À©¤©¤ lora_adapter.py     #   LoRA Î¢µ÷Ä£ĞÍ¼ÓÔØ
+©¦   ©¦   ©¸©¤©¤ adapters/           #   ¾ßÌåÊÊÅäÆ÷
+©¦   ©¦       ©À©¤©¤ deepseek.py     #   DeepSeek API ÊÊÅä
+©¦   ©¦       ©À©¤©¤ kimi.py         #   Kimi API ÊÊÅä
+©¦   ©¦       ©¸©¤©¤ openai_compat.py#   OpenAI ¼æÈİ API ÊÊÅä
+©¦   ©À©¤©¤ analysis/               # ×¨ÒµÊı¾İ·ÖÎöÄ£¿é
+©¦   ©¦   ©À©¤©¤ gnss.py             #   GNSS Î»ÒÆ·ÖÎö
+©¦   ©¦   ©À©¤©¤ insar.py            #   InSAR ĞÎ±ä·ÖÎö
+©¦   ©¦   ©À©¤©¤ rainfall.py         #   ½µÓêÊı¾İ·ÖÎö
+©¦   ©¦   ©À©¤©¤ groundwater.py      #   µØÏÂË®Î»·ÖÎö
+©¦   ©¦   ©À©¤©¤ pore_pressure.py    #   ¿×Ï¶Ë®Ñ¹Á¦·ÖÎö
+©¦   ©¦   ©À©¤©¤ cross_correlation.py#   ¶àÔ´Êı¾İ»¥Ïà¹Ø·ÖÎö
+©¦   ©¦   ©À©¤©¤ parser.py           #   ¶à¸ñÊ½Êı¾İ½âÎö
+©¦   ©¦   ©À©¤©¤ codegen.py          #   NL-to-Python ´úÂëÉú³É
+©¦   ©¦   ©¸©¤©¤ cache.py            #   ²éÑ¯½á¹û»º´æ
+©¦   ©À©¤©¤ retrieval/              # ÖªÊ¶¼ìË÷ÏµÍ³
+©¦   ©¦   ©À©¤©¤ vector_store.py     #   ChromaDB ÏòÁ¿´æ´¢
+©¦   ©¦   ©À©¤©¤ literature.py       #   ÎÄÏ×¼ìË÷
+©¦   ©¦   ©À©¤©¤ standards.py        #   ¹æ·¶ÌõÎÄ¼ìË÷
+©¦   ©¦   ©¸©¤©¤ cases.py            #   °¸Àı¼ìË÷
+©¦   ©À©¤©¤ reporting/              # ±¨¸æÉú³É
+©¦   ©¦   ©À©¤©¤ report_generator.py #   ±¨¸æÉú³ÉÒıÇæ£¨HTML/DOCX/PDF£©
+©¦   ©¦   ©À©¤©¤ charts.py           #   Plotly ½»»¥Ê½Í¼±í
+©¦   ©¦   ©À©¤©¤ charts_matplotlib.py#   Matplotlib ³ö°æ¼¶¾²Ì¬Í¼±í
+©¦   ©¦   ©¸©¤©¤ templates/          #   Jinja2 ±¨¸æÄ£°å
+©¦   ©À©¤©¤ self_growth/            # ×ÔÎÒ³É³¤Ä£¿é
+©¦   ©¦   ©À©¤©¤ feedback.py         #   ÏÔÊ½/ÒşÊ½·´À¡ÊÕ¼¯
+©¦   ©¦   ©À©¤©¤ prompt_optimizer.py #   APE Prompt ×Ô¶¯ÓÅ»¯
+©¦   ©¦   ©À©¤©¤ memory_optimizer.py #   ¼ÇÒäÈ¨ÖØÓÅ»¯
+©¦   ©¦   ©À©¤©¤ finetune.py         #   LoRA Î¢µ÷¹ÜÏß
+©¦   ©¦   ©À©¤©¤ implicit_feedback.py#   ÒşÊ½·´À¡ÊÕ¼¯
+©¦   ©¦   ©À©¤©¤ benchmark.py        #   Î¢µ÷»ù×¼ÆÀ¹À
+©¦   ©¦   ©¸©¤©¤ progressive.py      #   ½¥½øÊ½Ñ§Ï°
+©¦   ©À©¤©¤ schemas/                # Pydantic Êı¾İÄ£ĞÍ
+©¦   ©¸©¤©¤ db/                     # Êı¾İ¿â
+©¦       ©À©¤©¤ models.py           #   SQLAlchemy Êı¾İÄ£ĞÍ
+©¦       ©À©¤©¤ session.py          #   Êı¾İ¿â»á»°¹ÜÀí
+©¦       ©¸©¤©¤ migrations/         #   Alembic Ç¨ÒÆ½Å±¾
+©À©¤©¤ frontend/                   # NiceGUI Ç°¶Ë
+©¦   ©À©¤©¤ app.py                  #   Ó¦ÓÃÈë¿Ú
+©¦   ©¸©¤©¤ runtime_hook.py         #   ÔËĞĞ»·¾³³õÊ¼»¯
+©À©¤©¤ tests/                      # ²âÊÔ
+©¦   ©À©¤©¤ conftest.py             #   ¹²Ïí Fixtures
+©¦   ©À©¤©¤ unit/                   #   µ¥Ôª²âÊÔ£¨¸²¸ÇËùÓĞÄ£¿é£©
+©¦   ©¸©¤©¤ integration/            #   ¼¯³É²âÊÔ
+©À©¤©¤ scripts/                    # ¿ª·¢Óë²¿Êğ½Å±¾
+©À©¤©¤ mobile/                     # ÒÆ¶¯¶Ë£¨¿Õ¿Ç£©
+©À©¤©¤ docs/                       # ÎÄµµ
+©À©¤©¤ reports/output/             # Éú³ÉµÄ±¨¸æ
+©À©¤©¤ data/                       # ÔËĞĞÊ±Êı¾İ
+©¸©¤©¤ sandbox/                    # É³Ïä²ßÂÔÅäÖÃ
+```
+
+---
+
+## Quick Start
+
+### Prerequisites
+- Python 3.11+
+- API keys for at least one LLM provider (DeepSeek / Kimi / OpenAI)
 
 ```bash
-# 1. å…‹éš†é¡¹ç›®
-git clone <repo-url> && cd research-agent
+# 1. Clone & enter
+git clone https://github.com/your-org/research-agent.git
+cd research-agent
 
-# 2. å®‰è£…ä¾èµ–
-powershell -ExecutionPolicy Bypass -File scripts/setup.ps1
+# 2. Setup virtual environment
+python -m venv .venv
+.venv\\Scripts\\activate      # Windows
+pip install -r requirements.txt
 
-# 3. é…ç½®ç¯å¢ƒå˜é‡
+# 3. Configure API keys
 cp .env.example .env
-# ç¼–è¾‘ .env å¡«å…¥ API Key
+# Edit .env with your API keys
 
-# 4. å¯åŠ¨å¼€å‘æœåŠ¡å™¨
-powershell -ExecutionPolicy Bypass -File scripts/dev.ps1
+# 4. Run database migrations
+alembic upgrade head
+
+# 5. Start servers
+powershell -File scripts/dev.ps1
 ```
 
-## é¡¹ç›®ç»“æ„
+Then open http://localhost:8080 for the NiceGUI frontend, or http://localhost:8010/docs for API docs.
 
-```
-â”œâ”€â”€ backend/          # åç«¯æœåŠ¡
-â”‚   â”œâ”€â”€ api/          # REST API è·¯ç”±
-â”‚   â”œâ”€â”€ core/         # æ™ºèƒ½ä½“æ ¸å¿ƒå¼•æ“
-â”‚   â”œâ”€â”€ models/       # AI æ¨¡å‹æ¥å…¥å±‚
-â”‚   â”œâ”€â”€ analysis/     # ä¸“ä¸šæ•°æ®åˆ†æ
-â”‚   â”œâ”€â”€ retrieval/    # çŸ¥è¯†æ£€ç´¢ç³»ç»Ÿ
-â”‚   â”œâ”€â”€ reporting/    # æŠ¥å‘Šç”Ÿæˆ
-â”‚   â”œâ”€â”€ self_growth/  # è‡ªæˆ‘æˆé•¿æ¨¡å—
-â”‚   â””â”€â”€ db/           # æ•°æ®æŒä¹…åŒ–
-â”œâ”€â”€ frontend/         # ç”¨æˆ·ç•Œé¢
-â”œâ”€â”€ sandbox/          # ä»£ç æ‰§è¡Œæ²™ç®±
-â”œâ”€â”€ tests/            # æµ‹è¯•
-â”œâ”€â”€ docs/             # æ–‡æ¡£
-â”œâ”€â”€ mobile/           # ç§»åŠ¨ç«¯å°è£…
-â””â”€â”€ scripts/          # å¼€å‘è„šæœ¬
+### Desktop exe (no Python required)
+
+```powershell
+.venv\\Scripts\\Activate.ps1
+python scripts/build_exe.ps1
+# Output: dist\\ResearchAgent\\ResearchAgent.exe
 ```
 
-## å¼€å‘è·¯çº¿
+---
 
-è¯¦è§ [ROADMAP.md](ROADMAP.md)
+## API Overview
 
-## è®¸å¯
+All REST endpoints under `GET /api/v1/`:
 
-MIT License
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | Health check with component status |
+| `GET /metrics` | Prometheus metrics |
+| `POST /chat` | Send message (streaming or non-streaming) |
+| `GET/POST/DELETE /sessions` | Session CRUD |
+| `GET /models` | List registered LLM models |
+| `POST /analysis/execute` | Execute NL2Query in sandbox |
+| `POST /knowledge/upload` | Upload document to vector store |
+| `POST /feedback/collect` | Submit explicit feedback |
+| `GET /self-growth/stats` | Get self-growth optimisation stats |
+
+---
+
+## Test Suite
+
+```bash
+pytest tests/unit/ --cov=backend -v
+```
+
+151+ unit tests covering all core modules (1 skipped for environment-dependent feature). Integration tests cover the RAG analysis pipeline and self-growth loop.
+
+---
+
+## Key Technical Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Backend framework | FastAPI | Async, auto OpenAPI docs |
+| Database | SQLite -> PostgreSQL | Zero-config dev, scalable prod |
+| Vector store | ChromaDB | Local, lightweight, no separate service |
+| Embedding model | BAAI/bge-small-zh-v1.5 | Top Chinese semantic search |
+| Frontend (desktop) | NiceGUI | Python-native, no Node.js |
+| Fine-tuning | LoRA (PEFT) | Memory-efficient, hot-swappable |
+| Code sandbox | Subprocess + Docker | Dev zero-deps, prod full isolation |
+
+---
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the four-phase development plan.
+
+---
+
+## License
+
+MIT License.
+
+---
+
+*Research Agent v0.1.0 -- Updated 2026-07-02*

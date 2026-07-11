@@ -1,4 +1,4 @@
-﻿"""模型适配器单元测试"""
+"""模型适配器单元测试"""
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch

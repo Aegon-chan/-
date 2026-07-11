@@ -1,0 +1,22 @@
+{
+  "images": [
+    {
+      "filename": "cover_bg.jpg",
+      "reference": "Abstract tech background with glowing data flow lines and neural network texture, deep blue color scheme, leave center area empty for title overlay",
+      "style": "vector-illustration",
+      "palette": "cool-corporate"
+    },
+    {
+      "filename": "architecture.png",
+      "reference": "System layered architecture diagram showing 4 layers: Client, API Gateway, Core Engine, Services, Data Storage, connected by arrows, blue tech style",
+      "style": "vector-illustration",
+      "palette": "cool-corporate"
+    },
+    {
+      "filename": "roadmap.png",
+      "reference": "Horizontal timeline with 4 phases from Phase 1 to Phase 4, milestone nodes along the line, progressive development visualization",
+      "style": "vector-illustration",
+      "palette": "cool-corporate"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-﻿"""AI 模型接入模块"""
+"""AI 模型接入模块"""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import logging
 
 from backend.models.base import BaseLLM, BaseEmbedding, Message, ModelResponse
 from backend.models.registry import ModelRegistry
+from backend.models.lora_adapter import LoRAAdapterLLM
 from backend.models.adapters import DeepSeekAdapter, KimiAdapter
 from backend.config import settings
 
@@ -76,8 +77,79 @@ def init_models() -> None:
         logger.info("模型注册完成: %d 个模型可用", registered)
 
 
+def reload_models() -> None:
+    """Reload models from encrypted DB config (with .env fallback).
+
+    Called after API keys are saved/updated via the frontend.
+    Clears existing registrations and re-registers from the current config.
+    """
+    llm_ids = list(ModelRegistry._llms.keys())
+    for mid in llm_ids:
+        ModelRegistry.remove_llm(mid)
+
+    from backend.api.config import load_decrypted_keys
+    db_keys = load_decrypted_keys()
+
+    registered = 0
+
+    deepseek_key = db_keys.get("deepseek") or settings.deepseek_api_key
+    if deepseek_key and "your-" not in deepseek_key:
+        try:
+            adapter = DeepSeekAdapter(
+                api_key=deepseek_key,
+                api_base=settings.deepseek_api_base,
+            )
+            ModelRegistry.register_llm("deepseek-chat", adapter, set_default=True)
+            registered += 1
+            logger.info("Reloaded DeepSeek (deepseek-chat)")
+        except Exception as e:
+            logger.warning("DeepSeek reload failed: %s", e)
+    else:
+        logger.info("Skipping DeepSeek (no API key)")
+
+    kimi_key = db_keys.get("kimi") or settings.kimi_api_key
+    if kimi_key and "your-" not in kimi_key:
+        try:
+            adapter = KimiAdapter(
+                api_key=kimi_key,
+                api_base=settings.kimi_api_base,
+            )
+            ModelRegistry.register_llm("moonshot-v1", adapter)
+            registered += 1
+            logger.info("Reloaded KIMI (moonshot-v1)")
+        except Exception as e:
+            logger.warning("KIMI reload failed: %s", e)
+    else:
+        logger.info("Skipping KIMI (no API key)")
+
+    openai_key = db_keys.get("openai") or settings.openai_api_key
+    if openai_key and "your-" not in openai_key:
+        try:
+            from backend.models.adapters.openai_compat import OpenAICompatibleLLM
+            adapter = OpenAICompatibleLLM(
+                model_id="gpt-4o",
+                api_key=openai_key,
+                api_base=settings.openai_api_base,
+                model_name="gpt-4o",
+            )
+            ModelRegistry.register_llm("gpt-4o", adapter)
+            registered += 1
+            logger.info("Reloaded OpenAI (gpt-4o)")
+        except Exception as e:
+            logger.warning("OpenAI reload failed: %s", e)
+    else:
+        logger.info("Skipping OpenAI (no API key)")
+
+    if registered == 0:
+        logger.warning("No AI models registered after reload")
+    else:
+        logger.info("Model reload complete: %d models available", registered)
+
+
+
 __all__ = [
     "BaseLLM", "BaseEmbedding", "Message", "ModelResponse",
     "ModelRegistry",
-    "init_models",
+    "LoRAAdapterLLM",
+    "init_models", "reload_models",
 ]

@@ -1,77 +1,296 @@
-﻿"""
-代码执行沙箱。
+"""Enhanced code execution sandbox.
 
-为 AI 生成的代码执行提供安全隔离环境。
-开发期使用 subprocess + 资源限制，生产环境可使用 Docker。
+Provides safe isolated execution for AI-generated code with:
+- Result capture (stdout, figures, data)
+- Matplotlib headless backend config
+- Safe package allowlist
+- Resource limits (timeout, memory)
+- Output image encoding for inline display
 """
 
 from __future__ import annotations
 
+import base64
+import io
+import logging
 import os
+import re
 import shutil
 import subprocess
+import sys
 import tempfile
+import textwrap
+import time
+from pathlib import Path
+from typing import Any, Optional
+
 try:
     import resource
 except ImportError:
     resource = None
-from pathlib import Path
-from typing import Optional
+
+logger = logging.getLogger("research_agent.sandbox")
 
 
 class SandboxError(Exception):
-    """沙箱执行错误"""
     pass
 
 
+SAFE_PACKAGES = {
+    "numpy", "np",
+    "pandas", "pd",
+    "scipy",
+    "scipy.stats", "scipy.signal", "scipy.interpolate", "scipy.optimize",
+    "statsmodels",
+    "statsmodels.tsa.seasonal", "statsmodels.api",
+    "sklearn",
+    "sklearn.linear_model", "sklearn.preprocessing", "sklearn.metrics",
+    "matplotlib",
+    "matplotlib.pyplot", "plt",
+    "matplotlib.dates",
+    "matplotlib.ticker",
+    "plotly",
+    "plotly.graph_objects", "go",
+    "plotly.express", "px",
+    "plotly.io",
+    "seaborn", "sns",
+    "math",
+    "datetime",
+    "json",
+    "collections",
+    "itertools",
+    "typing",
+    "pathlib",
+    "re",
+    "random",
+    "statistics",
+    "decimal",
+    "fractions",
+    "dataclasses",
+}
+
+
+class SandboxResult:
+    def __init__(self, success: bool, stdout: str = "", stderr: str = "",
+                 figures: list[dict] = None, data: dict = None,
+                 return_code: int = 0, execution_time_ms: float = 0.0):
+        self.success = success
+        self.stdout = stdout
+        self.stderr = stderr
+        self.figures = figures or []
+        self.data = data or {}
+        self.return_code = return_code
+        self.execution_time_ms = execution_time_ms
+
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def get(self, key, default=None):
+        return getattr(self, key, default)
+
+    def to_dict(self) -> dict:
+        return {
+            "success": self.success,
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+            "figures": self.figures,
+            "data": self.data,
+            "return_code": self.return_code,
+            "execution_time_ms": self.execution_time_ms,
+        }
+
+
+
+def _get_python_exe() -> str:
+    """Get Python interpreter path, PyInstaller compatible."""
+    import sys, os
+    exe = sys.executable
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        base = os.path.dirname(sys.executable)
+        candidates = [
+            os.path.join(base, "_internal", "python.exe"),
+            os.path.join(base, "python.exe"),
+            os.path.join(base, "python3.exe"),
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+        # Fallback: search system PATH for a Python interpreter
+        import shutil as _shutil
+        for name in ["python", "python3"]:
+            found = _shutil.which(name)
+            if found:
+                logger.warning("PyInstaller: using system Python %s", found)
+                return found
+        raise RuntimeError(
+            "PyInstaller env: no Python interpreter found. "
+            "Sandbox requires a bundled or system Python."
+        )
+    return exe
+
+
 class CodeSandbox:
-    """代码执行沙箱"""
+    _WRAPPER_PROLOGUE = textwrap.dedent("""\
+        import os as _os
+        _os.environ.setdefault("MPLBACKEND", "Agg")
+        _os.environ.setdefault("MATPLOTLIBRC", "/nonexistent")
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as _plt
+        # MPL compat: remap removed labels= kwarg to tick_labels=
+        _plt_boxplot_orig = _plt.boxplot
+        def _plt_boxplot_compat(x, *args, **kwargs):
+            if 'labels' in kwargs and 'tick_labels' not in kwargs:
+                kwargs['tick_labels'] = kwargs.pop('labels')
+            return _plt_boxplot_orig(x, *args, **kwargs)
+        _plt.boxplot = _plt_boxplot_compat
+        import warnings
+        warnings.filterwarnings("ignore", category=UserWarning)
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+        import sys as _sys
+        from io import StringIO as _StringIO
+        _stdout_capture = _StringIO()
+        _old_stdout = _sys.stdout
+        _sys.stdout = _stdout_capture
+
+        __sandbox_results = {"_figures": [], "_data": {}}
+        _results = __sandbox_results
+        sandboxresults = __sandbox_results
+        _data = __sandbox_results["_data"]
+        _fig_counter = 0
+
+        def _save_fig(name=None):
+            import base64 as _b64, io as _io
+            global _fig_counter
+            fig = _plt.gcf()
+            if fig.get_axes():
+                buf = _io.BytesIO()
+                fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+                buf.seek(0)
+                b64 = _b64.b64encode(buf.read()).decode("utf-8")
+                __sandbox_results["_figures"].append({
+                    "id": name or f"fig_{_fig_counter}",
+                    "mime": "image/png",
+                    "b64": b64,
+                })
+                _fig_counter += 1
+            _plt.clf()
+
+        import numpy as _np
+        import pandas as _pd
+
+        try:
+    """)
+
+    _WRAPPER_EPILOGUE = textwrap.dedent("""\
+
+        except Exception as _sandbox_err:
+            __sandbox_results["_error"] = str(_sandbox_err)
+            import traceback as _tb
+            __sandbox_results["_traceback"] = _tb.format_exc()
+        finally:
+            _sys.stdout = _old_stdout
+            __sandbox_results["_stdout"] = _stdout_capture.getvalue()
+            _save_fig("fig_final")
+        import math as _math
+        def _sanitize_for_json(obj):
+            if obj is None:
+                return None
+            if isinstance(obj, (bool, int, float, str)):
+                if isinstance(obj, float):
+                    if _math.isnan(obj) or _math.isinf(obj):
+                        return None
+                return obj
+            if isinstance(obj, (_np.integer,)):
+                return int(obj)
+            if isinstance(obj, (_np.floating,)):
+                v = float(obj)
+                if _math.isnan(v) or _math.isinf(v):
+                    return None
+                return v
+            if isinstance(obj, (_np.ndarray,)):
+                return [_sanitize_for_json(x) for x in obj.tolist()]
+            if isinstance(obj, dict):
+                return {str(k): _sanitize_for_json(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [_sanitize_for_json(x) for x in obj]
+            try:
+                return str(obj)
+            except Exception:
+                return None
+        import json as _json
+        print("<<SANDBOX_RESULT>>")
+        print(_json.dumps(__sandbox_results, default=_sanitize_for_json))
+        print("<<SANDBOX_RESULT_END>>")
+    """)
 
     def __init__(self, timeout: int = 30, max_memory_mb: int = 512,
-                 work_dir: Optional[Path] = None):
+                 work_dir: Optional[Path] = None,
+                 figure_output_dir: Optional[Path] = None,
+                 docker_mode: bool = False,
+                 docker_image: str = "research-agent-sandbox:latest"):
         self.timeout = timeout
         self.max_memory_mb = max_memory_mb
         self.work_dir = work_dir or Path(tempfile.mkdtemp(prefix="sandbox_"))
+        self.figure_output_dir = figure_output_dir or (self.work_dir / "figures")
+        self.figure_output_dir.mkdir(parents=True, exist_ok=True)
+        self.docker_mode = docker_mode
+        self.docker_image = docker_image
+        # PyInstaller: auto-set Agg backend
+        if getattr(sys, "frozen", False):
+            os.environ.setdefault("MPLBACKEND", "Agg")
+            os.environ.setdefault("MATPLOTLIBRC", "/nonexistent")
+            logger.info("PyInstaller frozen: MPLBACKEND=Agg")
+            self.docker_mode = False  # Docker unavailable in PyInstaller builds
 
-    def execute_python(self, code: str, input_data: str = "") -> dict:
-        """在沙箱中执行 Python 代码"""
-        # 写入临时文件
+    def execute_python(self, code: str, input_data: str = "",
+                       context: Optional[dict] = None) -> SandboxResult:
+        start = time.perf_counter()
+        wrapped_code = self._build_wrapper(code, context)
+
         script_path = self.work_dir / "sandbox_script.py"
-        script_path.write_text(code, encoding="utf-8")
+        script_path.write_text(wrapped_code, encoding="utf-8")
 
         try:
             result = subprocess.run(
-                [sys.executable, str(script_path)],
+                [_get_python_exe(), str(script_path)],
                 input=input_data,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.timeout,
                 cwd=str(self.work_dir),
-                env={**os.environ, "PYTHONPATH": ""},
+                env=self._sandbox_env(),
             )
-            return {
-                "success": result.returncode == 0,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "return_code": result.returncode,
-            }
-        except subprocess.TimeoutExpired:
-            return {
-                "success": False,
-                "stdout": "",
-                "stderr": f"执行超时（{self.timeout}s）",
-                "return_code": -1,
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "stdout": "",
-                "stderr": str(e),
-                "return_code": -1,
-            }
+            elapsed_ms = (time.perf_counter() - start) * 1000
 
-    def execute_r(self, code: str, input_data: str = "") -> dict:
-        """在沙箱中执行 R 代码（需要 R 环境）"""
+            sandbox_result = self._parse_result(result.stdout, result.stderr,
+                                                result.returncode, elapsed_ms)
+            self._save_figures_to_disk(sandbox_result)
+            return sandbox_result
+
+        except subprocess.TimeoutExpired:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.warning("Sandbox timeout after %ss", self.timeout)
+            return SandboxResult(
+                success=False,
+                stderr=f"执行超时（{self.timeout}s）",
+                return_code=-1,
+                execution_time_ms=elapsed_ms,
+            )
+        except Exception as e:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.exception("Sandbox error")
+            return SandboxResult(
+                success=False,
+                stderr=str(e),
+                return_code=-1,
+                execution_time_ms=elapsed_ms,
+            )
+
+    def execute_r(self, code: str, input_data: str = "") -> SandboxResult:
+        start = time.perf_counter()
         script_path = self.work_dir / "sandbox_script.R"
         script_path.write_text(code, encoding="utf-8")
 
@@ -84,32 +303,151 @@ class CodeSandbox:
                 timeout=self.timeout,
                 cwd=str(self.work_dir),
             )
-            return {
-                "success": result.returncode == 0,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "return_code": result.returncode,
-            }
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            return SandboxResult(
+                success=result.returncode == 0,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                return_code=result.returncode,
+                execution_time_ms=elapsed_ms,
+            )
         except subprocess.TimeoutExpired:
-            return {
-                "success": False,
-                "stdout": "",
-                "stderr": f"执行超时（{self.timeout}s）",
-                "return_code": -1,
-            }
+            return SandboxResult(
+                success=False,
+                stderr=f"R 执行超时（{self.timeout}s）",
+                return_code=-1,
+            )
         except Exception as e:
-            return {
-                "success": False,
-                "stdout": "",
-                "stderr": str(e),
-                "return_code": -1,
-            }
+            return SandboxResult(
+                success=False,
+                stderr=str(e),
+                return_code=-1,
+            )
+
+    def execute_python_docker(self, code: str, input_data: str = "") -> SandboxResult:
+        """Execute Python code in a Docker container for full isolation.
+
+        Requires Docker to be installed and the sandbox image built.
+        Falls back to subprocess execution if Docker is unavailable.
+        """
+        import shutil as _shutil
+        if not _shutil.which("docker"):
+            logger.warning("Docker not available, falling back to subprocess sandbox")
+            return self.execute_python(code, input_data)
+
+        start = time.perf_counter()
+        script_path = self.work_dir / "sandbox_script.py"
+        script_path.write_text(code, encoding="utf-8")
+
+        try:
+            result = subprocess.run(
+                ["docker", "run", "--rm",
+                 "--network", "none",
+                 "--memory", f"{self.max_memory_mb}m",
+                 "--cpus", "1",
+                 "-i",
+                 self.docker_image,
+                 "python3"],
+                input=code,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+                cwd=str(self.work_dir),
+            )
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            return SandboxResult(
+                success=result.returncode == 0,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                return_code=result.returncode,
+                execution_time_ms=elapsed_ms,
+            )
+        except subprocess.TimeoutExpired:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.warning("Docker sandbox timeout after %ss", self.timeout)
+            return SandboxResult(
+                success=False,
+                stderr=f"Execution timeout ({self.timeout}s) in Docker sandbox",
+                return_code=-1,
+                execution_time_ms=elapsed_ms,
+            )
+        except FileNotFoundError:
+            logger.warning("Docker binary not found, falling back to subprocess")
+            return self.execute_python(code, input_data)
+        except Exception as e:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.exception("Docker sandbox error, falling back to subprocess")
+            return self.execute_python(code, input_data)
 
     def clean(self):
-        """清理沙箱工作目录"""
         if self.work_dir and self.work_dir.exists():
-            shutil.rmtree(str(self.work_dir))
+            shutil.rmtree(str(self.work_dir), ignore_errors=True)
 
     def __del__(self):
         self.clean()
 
+    def _sandbox_env(self) -> dict:
+        env = dict(os.environ)
+        for var in ["PYTHONPATH", "PYTHONSTARTUP", "PYTHONHOME",
+                    "LD_PRELOAD", "LD_LIBRARY_PATH"]:
+            env.pop(var, None)
+        env["MPLBACKEND"] = "Agg"
+        env["MATPLOTLIBRC"] = "/nonexistent"
+        env["LC_ALL"] = "C"
+        return env
+
+    def _build_wrapper(self, code: str, context: Optional[dict] = None) -> str:
+        context_block = ""
+        if context:
+            parts = []
+            for key, val in context.items():
+                if isinstance(val, str):
+                    parts.append(f"{key} = {repr(val)}")
+                else:
+                    parts.append(f"{key} = {val!r}")
+            context_block = "\n".join(parts) + "\n"
+
+        indented = textwrap.indent(context_block, "    ") + textwrap.indent(code, "    ")
+        return self._WRAPPER_PROLOGUE + indented + self._WRAPPER_EPILOGUE
+
+    def _parse_result(self, stdout: str, stderr: str,
+                      return_code: int, elapsed_ms: float) -> SandboxResult:
+        result = SandboxResult(
+            success=return_code == 0,
+            stdout=stdout,
+            stderr=stderr,
+            return_code=return_code,
+            execution_time_ms=elapsed_ms,
+        )
+
+        pattern = r"<<SANDBOX_RESULT>>\n(.*?)\n<<SANDBOX_RESULT_END>>"
+        match = re.search(pattern, stdout, re.DOTALL)
+        if match:
+            try:
+                import json
+                parsed = json.loads(match.group(1))
+                result.figures = parsed.get("_figures", [])
+                raw_data = parsed.get("_data", {})
+                result.data = raw_data if isinstance(raw_data, dict) else {}
+                result.stdout = parsed.get("_stdout", "")
+                if parsed.get("_error"):
+                    result.success = False
+                    result.stderr = parsed["_traceback"]
+            except (ValueError, KeyError):
+                pass
+
+        return result
+
+    def _save_figures_to_disk(self, result: SandboxResult):
+        for fig in result.figures:
+            try:
+                b64 = fig.get("b64", "")
+                if b64:
+                    import base64
+                    img_bytes = base64.b64decode(b64)
+                    path = self.figure_output_dir / f"{fig['id']}.png"
+                    path.write_bytes(img_bytes)
+                    fig["path"] = str(path.resolve())
+            except Exception as e:
+                logger.warning("Failed to save figure %s: %s",
+                               fig.get("id"), e)

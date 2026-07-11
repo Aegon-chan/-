@@ -1,0 +1,33 @@
+# =============================================================================
+# Research Agent — Docker Compose
+# =============================================================================
+
+services:
+  research-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: research-agent
+    ports:
+      - "8000:8000"
+      - "8080:8080"
+    volumes:
+      - research_data:/app/data
+      - research_reports:/app/reports
+      - research_model_cache:/app/model_cache
+    env_file:
+      - .env
+    environment:
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - DATABASE_URL=sqlite:///./data/research_agent.db
+    restart: unless-stopped
+    stop_grace_period: 10s
+
+volumes:
+  research_data:
+    driver: local
+  research_reports:
+    driver: local
+  research_model_cache:
+    driver: local

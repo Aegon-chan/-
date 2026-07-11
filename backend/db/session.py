@@ -24,7 +24,10 @@ def _async_sqlite_url(url: str) -> str:
 async_engine = create_async_engine(
     _async_sqlite_url(settings.database_url),
     echo=settings.app_debug,
-    future=True,
+    pool_size=10,
+    max_overflow=20,
+    pool_recycle=3600,
+    pool_pre_ping=True,    future=True,
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -66,7 +69,7 @@ async def get_async_session() -> AsyncSession:
             await session.close()
 
 
-def get_sync_session():
+def get_sync_session_ctx():
     """获取同步数据库会话（用于脚本/后台任务）"""
     session = SyncSessionLocal()
     try:
@@ -77,3 +80,9 @@ def get_sync_session():
         raise
     finally:
         session.close()
+
+
+
+def get_sync_session():
+    """获取一个新的同步数据库会话"""
+    return SyncSessionLocal()

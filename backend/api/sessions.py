@@ -1,7 +1,7 @@
-﻿"""会话管理 API"""
+"""会话管理 API"""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -9,8 +9,9 @@ from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_async_session
-from backend.db.models import Session as SessionModel, Message
+from backend.db.models import Session as SessionModel, Message, User
 from backend.schemas.sessions import (
+    MessageCreate,
     SessionCreate,
     SessionUpdate,
     SessionResponse,
@@ -28,10 +29,21 @@ async def create_session(
     db: AsyncSession = Depends(get_async_session),
 ):
     """创建新的对话会话"""
+    # Resolve user_id: try UUID first, then treat as username
+    user_id = body.user_id
+    user_q = select(User).where(User.id == body.user_id)
+    user = (await db.execute(user_q)).scalar_one_or_none()
+    if user is None:
+        user_q = select(User).where(User.username == body.user_id)
+        user = (await db.execute(user_q)).scalar_one_or_none()
+    if user is not None:
+        user_id = user.id
+
     session = SessionModel(
         title=body.title,
         model_id=body.model_id,
         system_prompt=body.system_prompt,
+        user_id=user_id,
     )
     db.add(session)
     await db.flush()
@@ -135,7 +147,7 @@ async def update_session(
         session.title = body.title
     if body.model_id is not None:
         session.model_id = body.model_id
-    session.updated_at = datetime.utcnow()
+    session.updated_at = datetime.now(timezone.utc)
     await db.flush()
 
     msg_count_q = select(func.count(Message.id)).where(
@@ -151,6 +163,42 @@ async def update_session(
         updated_at=session.updated_at,
     )
 
+
+
+
+@router.post("/{session_id}/messages", summary="批量追加消息")
+async def append_messages(
+    session_id: str,
+    body: MessageCreate,
+    db: AsyncSession = Depends(get_async_session),
+):
+    """向会话批量追加消息"""
+    q = select(SessionModel).where(SessionModel.id == session_id)
+    session = (await db.execute(q)).scalar_one_or_none()
+    if not session:
+        raise NotFoundError(resource="会话", resource_id=session_id)
+
+    saved = []
+    for msg in body.messages:
+        message = Message(
+            session_id=session_id,
+            role=msg.get("role", "user"),
+            content=msg.get("content", ""),
+            model_id=msg.get("model_id", session.model_id),
+            metadata_=msg.get("metadata", {}),
+        )
+        db.add(message)
+        saved.append(message)
+
+    # Update session timestamp
+    session.updated_at = datetime.now(timezone.utc)
+    await db.flush()
+
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "saved_count": len(saved),
+    }
 
 @router.delete("/{session_id}", summary="删除会话")
 async def delete_session(

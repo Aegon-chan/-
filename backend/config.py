@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     app_secret_key: str = "dev-secret-key-change-in-production"
     app_debug: bool = True
     app_host: str = "0.0.0.0"
-    app_port: int = 8000
+    app_port: int = 8010
 
     # --- 数据库 ---
     database_url: str = "sqlite:///./data/research_agent.db"
@@ -62,6 +62,20 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_file: str = "./data/logs/research_agent.log"
 
+    # --- Feature Flags ---
+    feature_self_growth: bool = True
+    feature_feedback: bool = True
+    feature_finetune: bool = False
+    feature_realtime_reports: bool = True
+
+    # --- Monitoring / Metrics ---
+    metrics_enabled: bool = True
+    metrics_port: int = 9090
+
+    # --- 监测数据库 ---
+    monitoring_db_url: str = "sqlite:///./data/monitoring_data.db"
+    monitoring_seed_on_startup: bool = True
+
     @property
     def data_dir(self) -> Path:
         return Path("./data").resolve()
@@ -81,4 +95,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-settings.ensure_dirs()
+# ensure_dirs() called in main.py lifespan

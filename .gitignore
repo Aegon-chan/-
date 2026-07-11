@@ -1,4 +1,4 @@
-# Python
+﻿# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -27,9 +27,7 @@ Thumbs.db
 *.db
 *.sqlite
 *.log
-reports/output/
-data/raw/
-data/processed/
+reports/output/raw/processed/
 
 # Testing
 .coverage
@@ -47,3 +45,30 @@ model_cache/
 node_modules/
 .next/
 dist/
+
+# Data directories\ndata/
+data/
+
+# PyInstaller / Desktop build artifacts
+*.spec
+dist/
+build/
+*.exe
+
+
+# Generated reports (track the templates, not the output)
+reports/output/
+# Runtime logs
+frontend*.err
+frontend*.log
+frontend*_live.txt
+_extract_agent.py
+
+# Temp/fix scripts (one-off debugging)
+deploy_*.py
+fix_*.py
+backend/api/database_admin.py.*
+backend_start.log
+_verify_active.py
+gen_chunks.py
+inject_chunks.py

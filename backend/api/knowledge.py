@@ -1,4 +1,4 @@
-﻿"""知识库 API 路由"""
+"""知识库 API 路由"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -48,7 +48,7 @@ async def upload_document(
 
     # 向量化存储
     store = get_vector_store()
-    await store.add_document(
+    await asyncio.to_thread(store.add_document, 
         doc_id=doc_id,
         content=content,
         metadata={"filename": filename, "ext": ext},
@@ -92,7 +92,7 @@ async def delete_document(doc_id: str):
 async def search_knowledge(body: SearchRequest):
     """对知识库进行语义检索"""
     store = get_vector_store()
-    results = await store.search(query=body.query, top_k=body.top_k)
+    results = await asyncio.to_thread(store.search, query=body.query, top_k=body.top_k)
     return SearchResponse(
         query=body.query,
         results=[SearchResult(**r) for r in results],
