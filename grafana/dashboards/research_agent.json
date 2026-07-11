@@ -1,0 +1,13 @@
+{
+  "title": "Research Agent",
+  "uid": "research-agent",
+  "schemaVersion": 38,
+  "panels": [
+    {"title": "Database Up", "type": "stat", "datasource": "Prometheus",
+     "targets": [{"expr": "research_agent_database_up", "legendFormat": "DB"}]},
+    {"title": "Models Registered", "type": "stat", "datasource": "Prometheus",
+     "targets": [{"expr": "research_agent_models_registered", "legendFormat": "Models"}]},
+    {"title": "Errors (4xx/5xx)", "type": "graph", "datasource": "Prometheus",
+     "targets": [{"expr": "rate(http_requests_total{status=~\"4..|5..\"}[5m])", "legendFormat": "{{status}}"}]}
+  ]
+}
