@@ -26,10 +26,17 @@ logger = logging.getLogger("research_agent")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
+    """应用生命周期管理"""
     # Ensure all data directories exist at startup
     settings.ensure_dirs()
-    #应用生命周期管理"""
+
+    # Configure logging with rotation
+    from backend.logging_config import setup_logging
+    setup_logging(
+        log_level=settings.log_level,
+        log_file=settings.log_file,
+    )
+
     # 启动：数据库表由 Alembic migration 管理（scripts/setup.ps1 中执行）
 
     # 启动：注册 AI 模型
@@ -122,6 +129,42 @@ async def log_requests(request: Request, call_next):
         elapsed * 1000,
     )
     return response
+
+
+# --- Audit middleware (wraps around all requests) ---
+from backend.audit import audit_middleware as _audit_mw
+app.middleware("http")(_audit_mw)
+
+# Audit log viewer
+from fastapi.responses import HTMLResponse
+
+
+@app.get("/audit", include_in_schema=False)
+async def _audit_viewer():
+    from backend.audit import get_audit_db
+    db = get_audit_db()
+    stats = db.stats()
+    rows = db.query(limit=200)
+    html_rows = ""
+    for r in rows:
+        cls = "error" if int(r.get("status_code", 0) or 0) >= 500 else "warn" if int(r.get("status_code", 0) or 0) >= 400 else ""
+        html_rows += "<tr class="" + cls + ""><td>" + str(r.get("timestamp", ""))[:19] + "</td><td>" + str(r.get("method", "")) + "</td><td>" + str(r.get("path", "")) + "</td><td>" + str(r.get("status_code", "")) + "</td><td>" + str(r.get("duration_ms", "")) + "ms</td><td>" + str(r.get("error", "") or "")[:60] + "</td></tr>"
+    html = """<!DOCTYPE html><html><head><meta charset="utf-8"><title>Audit Log</title><style>
+body{font-family:monospace;font-size:13px;padding:20px;background:#f5f5f5}
+.stats{margin-bottom:20px;padding:10px 15px;background:#fff;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.stats span{margin-right:20px}
+table{border-collapse:collapse;width:100%;background:#fff;border-radius:6px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+th{background:#4a5568;color:#fff;padding:8px 10px;text-align:left}
+td{padding:6px 10px;border-bottom:1px solid #e2e8f0}
+tr.error td{background:#fff5f5;color:#c53030}
+tr.warn td{background:#fffff0;color:#975a16}
+tr:hover td{background:#ebf4ff}
+</style></head><body>
+<div class="stats"><span>Total: <strong>""" + str(stats.get("total_entries", 0)) + """</strong></span>
+<span>Errors: <strong>""" + str(stats.get("error_count", 0)) + """</strong></span>
+<span>Methods: """ + str(stats.get("by_method", {})) + """</span></div>
+<table><thead><tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th><th>Duration</th><th>Error</th></tr></thead><tbody>""" + html_rows + """</tbody></table></body></html>"""
+    return HTMLResponse(html)
 
 
 # --- 异常处理 ---
