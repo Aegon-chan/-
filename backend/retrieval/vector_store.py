@@ -12,6 +12,7 @@ from typing import Optional
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
+from chromadb import EmbeddingFunction
 
 from backend.config import settings
 
@@ -33,11 +34,10 @@ def get_vector_store() -> "VectorStore":
 # ───────────────────────────── 自定义 Embedding 函数 ─────────────────────────
 
 
-class _BgeEmbeddingFunction:
+class _BgeEmbeddingFunction(EmbeddingFunction[list[str]]):
     """使用 BAAI/bge-small-zh-v1.5 的 Embedding 函数，首次使用自动下载模型"""
 
     name = "bge_zh"
-
     def __init__(self, model_name: str = "BAAI/bge-small-zh-v1.5"):
         self._model_name = model_name
         self._model = None

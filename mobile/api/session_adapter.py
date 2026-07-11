@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 logger = logging.getLogger("research_agent.mobile.session_adapter")
@@ -48,7 +48,7 @@ def create_session(user_id: str = "default", title: str = "New Session",
     from sqlalchemy import text as sa_text
 
     session_id = str(uuid.uuid4())
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
     try:
         with sync_engine.begin() as conn:
             conn.execute(

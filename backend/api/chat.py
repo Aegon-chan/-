@@ -90,7 +90,7 @@ async def create_chat_completion(
 
     # 8. 更新会话时间
     from datetime import datetime, timezone
-    session.updated_at = datetime.utcnow()
+    session.updated_at = datetime.now(timezone.utc)
 
     return ChatResponse(
         session_id=body.session_id,
@@ -160,7 +160,7 @@ async def stream_chat(
         await db.commit()
 
         from datetime import datetime, timezone
-        session.updated_at = datetime.utcnow()
+        session.updated_at = datetime.now(timezone.utc)
         await db.commit()
 
         yield f"data: {json.dumps({'event': 'done', 'session_id': body.session_id, 'message_id': msg.id})}\n\n"

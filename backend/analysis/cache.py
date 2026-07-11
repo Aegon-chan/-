@@ -9,7 +9,7 @@ import hashlib
 import json
 import logging
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -68,7 +68,7 @@ class QueryCache:
         created_at = datetime.fromisoformat(created_at_str)
 
         # Check TTL
-        if datetime.utcnow() - created_at > timedelta(hours=self.ttl_hours):
+        if datetime.now(timezone.utc).replace(tzinfo=None) - created_at > timedelta(hours=self.ttl_hours):
             self.delete(key)
             return None
 
@@ -91,7 +91,7 @@ class QueryCache:
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (key, query[:500], data_type, code[:2000],
                  json.dumps(result, default=str),
-                 datetime.utcnow().isoformat()),
+                 datetime.now(timezone.utc).isoformat()),
             )
         return key
 
@@ -102,7 +102,7 @@ class QueryCache:
 
     def clear_expired(self):
         """Remove all expired entries."""
-        cutoff = (datetime.utcnow() - timedelta(hours=self.ttl_hours)).isoformat()
+        cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=self.ttl_hours)).isoformat()
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.execute("DELETE FROM query_cache WHERE created_at < ?", (cutoff,))
 

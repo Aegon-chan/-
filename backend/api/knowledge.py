@@ -1,7 +1,7 @@
 """知识库 API 路由"""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, UploadFile, File
 
@@ -43,7 +43,7 @@ async def upload_document(
         raise ValidationError(message="文件内容为空或无法提取文字")
 
     # 生成 doc_id
-    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     doc_id = f"doc_{ts}_{filename}"
 
     # 向量化存储
@@ -58,7 +58,7 @@ async def upload_document(
         doc_id=doc_id,
         filename=filename,
         chunk_count=len(content) // 500 + 1,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
 
 

@@ -151,25 +151,23 @@ async def audit_middleware(request: Request, call_next):
         path = request.url.path
 
         # Skip healthcheck and static files
-        if path in ("/health", "/metrics") or path.startswith("/uploads"):
-            return
-
-        # Only log mutations (POST/PUT/DELETE) + errors
-        if method in ("POST", "PUT", "DELETE") or status >= 400:
-            try:
-                db = get_audit_db()
-                db.write({
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "method": method,
-                    "path": path,
-                    "status_code": status,
-                    "duration_ms": round(duration, 1),
-                    "user_agent": request.headers.get("user-agent", "")[:200],
-                    "client_host": request.client.host if request.client else "",
-                    "request_summary": "",
-                    "error": error,
-                })
-            except Exception as e:
-                logger.warning("Audit write failed: %s", e)
+        if path not in ("/health", "/metrics") and not path.startswith("/uploads"):
+            # Only log mutations (POST/PUT/DELETE) + errors
+            if method in ("POST", "PUT", "DELETE") or status >= 400:
+                try:
+                    db = get_audit_db()
+                    db.write({
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "method": method,
+                        "path": path,
+                        "status_code": status,
+                        "duration_ms": round(duration, 1),
+                        "user_agent": request.headers.get("user-agent", "")[:200],
+                        "client_host": request.client.host if request.client else "",
+                        "request_summary": "",
+                        "error": error,
+                    })
+                except Exception as e:
+                    logger.warning("Audit write failed: %s", e)
 
     return response  # type: ignore[return-value]
