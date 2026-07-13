@@ -1,0 +1,36 @@
+{
+  "": "https://raw.githubusercontent.com/nicegui/nicegui/main/nicegui/static/schema.json",
+  "identifier": "default",
+  "description": "Default capabilities for Research Agent",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "shell:allow-execute",
+    "shell:allow-spawn",
+    "shell:default",
+    "updater:default",
+    "updater:allow-check",
+    "updater:allow-download-and-install",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "sidecar",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    },
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "sidecar",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    }
+  ]
+}

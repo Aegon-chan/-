@@ -165,7 +165,7 @@ def process_attachments(attachments: list | None) -> "list[ContentPart]":
     if not attachments:
         return []
     parts: list[ContentPart] = []
-    upload_root = Path("data") / "uploads"
+    upload_root = UPLOAD_DIR
     for att in attachments:
         # Support both dict and Pydantic model
         if isinstance(att, dict):

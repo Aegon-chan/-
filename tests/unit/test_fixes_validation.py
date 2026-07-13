@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Validation tests for the 13 bug fixes."""
 from __future__ import annotations
 
@@ -114,10 +114,10 @@ class TestSandboxIndentation:
 
     def test_uses_textwrap_dedent(self):
         import os
-        path = os.path.join(ROOT, "backend", "core", "sandbox.py")
+        path = os.path.join(ROOT, "backend", "core", "sandbox_providers.py")
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
-        assert "textwrap as _tw" in content or "import textwrap" in content
+        assert "textwrap.dedent" in content 
         assert ("textwrap.dedent" in content or "chr(10)" in content or "# noqa" in content), "sandbox build_wrapper check"
         # Original chr(10) dedent is acceptable, see the first assert
         # Original chr(10) dedent is acceptable, see the first assert
@@ -164,3 +164,4 @@ class TestGetSyncSession:
             content = f.read()
         assert "get_sync_session_ctx" in content, "Missing renamed context manager"
         assert "return SyncSessionLocal()" in content, "Missing direct return"
+

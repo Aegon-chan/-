@@ -83,3 +83,5 @@ pytest-cov==7.1.0
 ruff==0.15.20
 mypy==1.7.0
 coverage==7.14.3
+# K8s multi-tenant sandbox provider
+kubernetes>=30.0.0,<32.0.0

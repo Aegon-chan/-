@@ -1,0 +1,52 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: research-agent-deny-all
+  namespace: research-agent-sandbox
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: research-agent-allow-api
+  namespace: research-agent
+spec:
+  podSelector:
+    matchLabels:
+      app: research-agent
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - port: 8000
+    - port: 8080
+  egress:
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - port: 443
+    - port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandbox-isolated
+  namespace: research-agent-sandbox
+spec:
+  podSelector:
+    matchLabels:
+      app: research-agent-sandbox
+  policyTypes:
+  - Ingress
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: research-agent-sandbox

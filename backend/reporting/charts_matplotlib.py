@@ -9,6 +9,17 @@ from matplotlib.ticker import AutoMinorLocator, MaxNLocator
 from pathlib import Path
 import logging
 import matplotlib.ticker as mticker
+import matplotlib.font_manager as _fm
+
+# --- Configure Chinese (CJK) font support ---
+# Explicitly set Chinese-capable fonts so matplotlib can render CJK glyphs.
+# Without this, Chinese labels produce warnings and may appear as empty boxes.
+plt.rcParams["font.sans-serif"] = [
+    "Microsoft YaHei", "SimHei", "Noto Sans SC",
+    "Source Han Serif SC", "SimSun", "DejaVu Sans",
+]
+plt.rcParams["axes.unicode_minus"] = False
+
 from backend.reporting.charts import _ols
 import numpy as np
 

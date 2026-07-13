@@ -226,11 +226,14 @@ def save_image(fig: go.Figure, path: Union[str, Path], scale: int = 2) -> Path:
             "Static image export requires kaleido; saving HTML instead."
         )
         save_html(fig, path.with_suffix(".html"))
+        return path.with_suffix(".html")
     return path
 
 
 def _hex_to_rgba(hex_color: str, alpha: float) -> tuple:
     h = hex_color.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
     r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
     return r, g, b, alpha
 

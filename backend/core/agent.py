@@ -29,7 +29,7 @@ class IntentResult(TypedDict):
 
 
 from backend.models.base import BaseLLM, ContentPart, Message, ModelResponse
-from backend.uploads import extract_text_from_file, image_to_data_uri
+from backend.uploads import UPLOAD_DIR, extract_text_from_file, image_to_data_uri
 from pathlib import Path
 from backend.models.registry import ModelRegistry
 from backend.core.memory import MemoryStore
@@ -135,7 +135,7 @@ def _process_attachments(attachments: list[dict] | None) -> list[ContentPart]:
     if not attachments:
         return []
     parts: list[ContentPart] = []
-    upload_root = Path("data") / "uploads"
+    upload_root = UPLOAD_DIR
     for att in attachments:
         url = att.get("url", "")
         mime = att.get("mime_type", "")
@@ -728,7 +728,7 @@ class ResearchAgent:
         if figures:
             import base64, uuid
             from pathlib import Path
-            uploads_dir = Path("data") / "uploads"
+            uploads_dir = UPLOAD_DIR
             uploads_dir.mkdir(parents=True, exist_ok=True)
             figure_md_lines = []
             for i, fig in enumerate(figures):
