@@ -1,4 +1,4 @@
-""">SandboxProvider ABC + 3 implementations.
+﻿""">SandboxProvider ABC + 3 implementations.
 
 SubprocessProvider (local subprocess, default)
 DockerProvider     (Docker container, single-node production)
@@ -19,7 +19,6 @@ import textwrap
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Optional
 
 logger = logging.getLogger("research_agent.sandbox.providers")
 
@@ -92,6 +91,13 @@ _WRAPPER_PROLOGUE = textwrap.dedent("""\
             kwargs['tick_labels'] = kwargs.pop('labels')
         return _plt_boxplot_orig(x, *args, **kwargs)
     _plt.boxplot = _plt_boxplot_compat
+    import matplotlib.axes as _mpl_axes
+    _ax_boxplot_orig = _mpl_axes.Axes.boxplot
+    def _ax_boxplot_compat(self, x, *args, **kwargs):
+        if 'labels' in kwargs and 'tick_labels' not in kwargs:
+            kwargs['tick_labels'] = kwargs.pop('labels')
+        return _ax_boxplot_orig(self, x, *args, **kwargs)
+    _mpl_axes.Axes.boxplot = _ax_boxplot_compat
     import warnings
     warnings.filterwarnings("ignore", category=UserWarning)
     warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -168,8 +174,24 @@ _WRAPPER_EPILOGUE = textwrap.dedent("""\
         except Exception:
             return None
     import json as _json
+    try:
+        _json_output = _json.dumps(__sandbox_results, default=_sanitize_for_json)
+    except Exception:
+        _safe_results = {k: v for k, v in __sandbox_results.items() if k in ("_figures", "_stdout", "_error", "_traceback")}
+        _data_str = {}
+        for _k, _v in __sandbox_results.get("_data", {}).items():
+            try:
+                _data_str[_k] = str(_v)
+            except Exception:
+                _data_str[_k] = "<unserializable>"
+        _safe_results["_data"] = _data_str
+        try:
+            _json_output = _json.dumps(_safe_results, default=_sanitize_for_json)
+        except Exception:
+            _minimal = {"_error": str(__sandbox_results.get("_error", "JSON serialization failed"))}
+            _json_output = _json.dumps(_minimal)
     print("<<SANDBOX_RESULT>>")
-    print(_json.dumps(__sandbox_results, default=_sanitize_for_json))
+    print(_json_output)
     print("<<SANDBOX_RESULT_END>>")
 """)
 
@@ -457,7 +479,7 @@ class DockerProvider(SandboxProvider):
         except FileNotFoundError:
             logger.warning("Docker binary not found, falling back")
             return SubprocessProvider(timeout=self.timeout, work_dir=self.work_dir).execute_python(code, input_data, context)
-        except Exception as e:
+        except Exception:
             logger.exception("Docker sandbox error, falling back")
             return SubprocessProvider(timeout=self.timeout, work_dir=self.work_dir).execute_python(code, input_data, context)
 

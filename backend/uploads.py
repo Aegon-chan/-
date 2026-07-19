@@ -152,7 +152,7 @@ def image_to_data_uri(file_path: str) -> str:
         mime = "image/png"
     return f"data:{mime};base64,{encoded}"
 
-def process_attachments(attachments: list | None) -> "list[ContentPart]":
+def process_attachments(attachments: list | None) -> "list":
     """将附件元数据列表转为 ContentPart 列表，供多模态消息使用。
 
     支持 dict 格式（来自前端 _pending_attachments）和 AttachmentSchema 对象（来自 API）。

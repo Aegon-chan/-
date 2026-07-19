@@ -6,23 +6,19 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 
-from sqlalchemy import func, select, text, delete as sa_delete
+from sqlalchemy import func, select, delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.monitoring_models import (
     DATA_TYPE_LABEL_MAP,
-    DATA_TYPE_TIME_COLUMN_MAP,
     MonitoringStation,
     get_model_for_data_type,
     get_time_column_name,
 )
 from backend.db.monitoring_session import (
     AsyncSessionLocal,
-    SyncSessionLocal,
-    async_engine,
-    init_monitoring_db,
 )
 
 logger = logging.getLogger("research_agent.monitoring_service")
@@ -118,7 +114,6 @@ async def count_station_data_by_type(db: AsyncSession, station_id: str) -> dict[
     for dt in DATA_TYPES:
         model = get_model_for_data_type(dt)
         if model:
-            time_col = getattr(model, get_time_column_name(dt))
             q = select(func.count(model.id)).where(model.station_id == station_id)
             result = await db.execute(q)
             counts[dt] = result.scalar() or 0
@@ -523,8 +518,6 @@ def _station_to_dict(s: MonitoringStation) -> dict:
         "altitude": s.altitude,
         "description": s.description,
         "status": s.status,
-        "created_at": s.created_at.isoformat() if s.created_at else None,
-        "updated_at": s.updated_at.isoformat() if s.updated_at else None,
     }
 
 

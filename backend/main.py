@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import settings
@@ -132,22 +132,21 @@ async def log_requests(request: Request, call_next):
 
 
 # --- Audit middleware (wraps around all requests) ---
-from backend.audit import audit_middleware as _audit_mw
+from backend.audit import audit_middleware as _audit_mw  # noqa: E402
 app.middleware("http")(_audit_mw)
 
 # Audit log viewer
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse  # noqa: E402
 
 
 @app.get("/audit", include_in_schema=False)
 async def _audit_viewer():
-    from backend.audit import get_audit_db
+    from backend.audit import get_audit_db  # noqa: E402
     db = get_audit_db()
     stats = db.stats()
     rows = db.query(limit=200)
     html_rows = ""
     for r in rows:
-        cls = "error" if int(r.get("status_code", 0) or 0) >= 500 else "warn" if int(r.get("status_code", 0) or 0) >= 400 else ""
         html_rows += "<tr class="" + cls + ""><td>" + str(r.get("timestamp", ""))[:19] + "</td><td>" + str(r.get("method", "")) + "</td><td>" + str(r.get("path", "")) + "</td><td>" + str(r.get("status_code", "")) + "</td><td>" + str(r.get("duration_ms", "")) + "ms</td><td>" + str(r.get("error", "") or "")[:60] + "</td></tr>"
     html = """<!DOCTYPE html><html><head><meta charset="utf-8"><title>Audit Log</title><style>
 body{font-family:monospace;font-size:13px;padding:20px;background:#f5f5f5}
@@ -215,20 +214,20 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 # --- 路由注册 ---
-from backend.api import router as api_router
+from backend.api import router as api_router  # noqa: E402
 
 app.include_router(api_router, prefix="/api/v1")
 
 # --- Monitoring data routes ---
-from backend.api.monitoring import router as monitoring_router
+from backend.api.monitoring import router as monitoring_router  # noqa: E402
 app.include_router(monitoring_router, prefix="/api/v1/monitoring")
 
 # --- Mobile API routes ---
-from mobile import mobile_router
+from mobile import mobile_router  # noqa: E402
 app.include_router(mobile_router, prefix="/api/v1/mobile")
 
 # --- Static file serving for uploads ---
-import os as _os
+import os as _os  # noqa: E402
 _uploads_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "data", "uploads")
 _os.makedirs(_uploads_dir, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=_uploads_dir), name="uploads")
@@ -238,7 +237,7 @@ app.mount("/uploads", StaticFiles(directory=_uploads_dir), name="uploads")
 @app.get("/health")
 async def health_check():
     """Enhanced health check with component status."""
-    import os, time
+    import time
     from backend.db.session import sync_engine
     from backend.models.registry import ModelRegistry
     from datetime import datetime, timezone
@@ -283,7 +282,6 @@ async def health_check():
 @app.get("/metrics")
 async def metrics_endpoint():
     """Expose basic Prometheus-style metrics."""
-    import os, time
     from backend.models.registry import ModelRegistry
 
     lines = []

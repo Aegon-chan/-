@@ -6,11 +6,9 @@ and provides the standard BaseLLM chat/stream_chat interface.
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 from pathlib import Path
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator
 
 from backend.models.base import BaseLLM, Message, ModelResponse
 

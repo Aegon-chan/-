@@ -31,7 +31,7 @@ class TestFeedbackDatasetBuilder:
         result = builder.build(output_path=str(output))
 
         assert Path(result).exists()
-        records = [json.loads(l) for l in Path(result).read_text(encoding="utf-8").splitlines() if l.strip()]
+        records = [json.loads(line) for line in Path(result).read_text(encoding="utf-8").splitlines() if line.strip()]
         assert len(records) >= 2
 
         # Check that high-rated records are included
@@ -43,7 +43,7 @@ class TestFeedbackDatasetBuilder:
         output = tmp_path / "train_all.jsonl"
         result = builder.build(output_path=str(output), include_low_quality=True)
 
-        records = [json.loads(l) for l in Path(result).read_text(encoding="utf-8").splitlines() if l.strip()]
+        records = [json.loads(line) for line in Path(result).read_text(encoding="utf-8").splitlines() if line.strip()]
         ratings = [r["metadata"]["rating"] for r in records]
         # Should include rating 4, 5 AND rating 1
         assert 1 in ratings or 4 in ratings or 5 in ratings
@@ -58,7 +58,7 @@ class TestFeedbackDatasetBuilder:
         output = tmp_path / "conv.jsonl"
         result = builder.build_from_conversations(conversations, output_path=str(output))
 
-        records = [json.loads(l) for l in Path(result).read_text(encoding="utf-8").splitlines() if l.strip()]
+        records = [json.loads(line) for line in Path(result).read_text(encoding="utf-8").splitlines() if line.strip()]
         # Only high-rated (>=4) records should be included
         assert len(records) == 2
 
@@ -88,5 +88,5 @@ class TestFineTunerDataPrep:
         output = str(tmp_path / "training.jsonl")
         result = await tuner.prepare_dataset(feedback_data, output_path=output)
         assert Path(result).exists()
-        records = [json.loads(l) for l in Path(result).read_text(encoding="utf-8").splitlines() if l.strip()]
+        records = [json.loads(line) for line in Path(result).read_text(encoding="utf-8").splitlines() if line.strip()]
         assert len(records) == 2

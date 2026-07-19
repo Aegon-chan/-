@@ -18,9 +18,6 @@ from backend.core.sandbox_providers import (
     KubernetesProvider,
     SandboxResult,
     SandboxError,
-    build_wrapper,
-    parse_result,
-    save_figures_to_disk,
 )
 
 logger = logging.getLogger("research_agent.sandbox")

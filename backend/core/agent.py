@@ -4,17 +4,15 @@ ResearchAgent —— 核心智能体
 整合 NL2Query、记忆系统、策略库、反馈闭环、Prompt 优化、LoRA 微调。
 """
 
-from __future__ import annotations
+from __future__ import annotations  # noqa: E402
 
-import json
-import asyncio
-import logging
-import threading
-import time
-import uuid
-from datetime import datetime
-from typing import Any, AsyncIterator, Optional
-from typing import TypedDict
+import json  # noqa: E402
+import logging  # noqa: E402
+import threading  # noqa: E402
+import time  # noqa: E402
+from datetime import datetime  # noqa: E402
+from typing import AsyncIterator, Optional  # noqa: E402
+from typing import TypedDict  # noqa: E402
 
 
 class IntentResult(TypedDict):
@@ -28,19 +26,19 @@ class IntentResult(TypedDict):
     time_range_label: str
 
 
-from backend.models.base import BaseLLM, ContentPart, Message, ModelResponse
-from backend.uploads import UPLOAD_DIR, extract_text_from_file, image_to_data_uri
-from pathlib import Path
-from backend.models.registry import ModelRegistry
-from backend.core.memory import MemoryStore
-from backend.core.strategy import StrategyLibrary
-from backend.core.context_manager import ContextManager
-from backend.self_growth.feedback import FeedbackCollector
-from backend.self_growth.prompt_optimizer import PromptOptimizer
-from backend.self_growth.memory_optimizer import MemoryOptimizer
-from backend.self_growth.finetune import FineTuner
-from backend.self_growth.implicit_feedback import ImplicitFeedbackCollector
-from backend.self_growth.progressive import ProgressiveLearner
+from backend.models.base import BaseLLM, ContentPart, Message, ModelResponse  # noqa: E402
+from backend.uploads import UPLOAD_DIR, extract_text_from_file, image_to_data_uri  # noqa: E402
+from pathlib import Path  # noqa: E402
+from backend.models.registry import ModelRegistry  # noqa: E402
+from backend.core.memory import MemoryStore  # noqa: E402
+from backend.core.strategy import StrategyLibrary  # noqa: E402
+from backend.core.context_manager import ContextManager  # noqa: E402
+from backend.self_growth.feedback import FeedbackCollector  # noqa: E402
+from backend.self_growth.prompt_optimizer import PromptOptimizer  # noqa: E402
+from backend.self_growth.memory_optimizer import MemoryOptimizer  # noqa: E402
+from backend.self_growth.finetune import FineTuner  # noqa: E402
+from backend.self_growth.implicit_feedback import ImplicitFeedbackCollector  # noqa: E402
+from backend.self_growth.progressive import ProgressiveLearner  # noqa: E402
 
 logger = logging.getLogger("research_agent.core")
 
@@ -208,7 +206,7 @@ class ResearchAgent:
     def implicit_feedback(self) -> ImplicitFeedbackCollector:
         """Lazy-initialized implicit feedback collector."""
         if self._implicit_feedback is None:
-            from backend.config import settings
+            from backend.config import settings  # noqa: E402
             self._implicit_feedback = ImplicitFeedbackCollector(
                 db_path=f"./data/feedback_{self.user_id}.db",
                 enable=getattr(settings, "feature_implicit_feedback", True),
@@ -316,10 +314,9 @@ class ResearchAgent:
             try:
                 feedbacks = self.feedback_collector.get_feedback_by_user(self.user_id, limit=50)
                 async def _do_optimize():
-                    import asyncio
                     for task_type in ["analysis", "retrieval", "report"]:
                         await self.prompt_optimizer.optimize(task_type, feedbacks)
-                import asyncio
+                import asyncio  # noqa: E402
                 asyncio.run(_do_optimize())
                 self._feedbacks_since_optimization = 0
                 self._last_prompt_eval_time = now
@@ -335,9 +332,9 @@ class ResearchAgent:
                 feedbacks = self.feedback_collector.get_feedback_by_user(self.user_id, limit=200)
                 training_data = self.feedback_collector.to_training_data(min_rating=HIGH_QUALITY_RATING_THRESHOLD)
                 if len(training_data) >= FINETUNE_AUTO_TRIGGER_COUNT:
-                    import asyncio
+                    import asyncio  # noqa: E402
 
-                    dataset_path = asyncio.run(self.fine_tuner.prepare_dataset(training_data))
+                    asyncio.run(self.fine_tuner.prepare_dataset(training_data))
                     logger.info("Auto-trigger fine-tuning: %d samples (user=%s)",
                                 len(training_data), self.user_id)
         except Exception as e:
@@ -587,7 +584,7 @@ class ResearchAgent:
         Returns:
             (start_datetime_or_None, label_or_empty)
         """
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta  # noqa: E402
         now = datetime.now()
         text = user_input.lower()
         if any(kw in text for kw in ["\u6700\u8fd1\u4e00\u4e2a\u6708", "\u8fd1\u4e00\u4e2a\u6708", "\u4e00\u4e2a\u6708\u6765", "\u4e00\u4e2a\u6708\u5185", "\u8fd9\u4e00\u6708"]):
@@ -637,7 +634,7 @@ class ResearchAgent:
 
         data = res.get("data", {})
         if data:
-            import json
+            import json  # noqa: E402
             parts.append(f"关键数据:\n```json\n{json.dumps(data, ensure_ascii=False, indent=2)[:2000]}\n```")
 
         code = result.get("code", "")
@@ -680,7 +677,7 @@ class ResearchAgent:
 
         data = res.get("data", {})
         if data:
-            import json
+            import json  # noqa: E402
             summary = json.dumps(data, ensure_ascii=False)[:500]
             lines.append(f"**关键数据**: {summary}")
 
@@ -695,7 +692,7 @@ class ResearchAgent:
         try:
             return await self._inner_integrated_analysis(query, data_type, generate_report)
         except Exception as e:
-            import logging
+            import logging  # noqa: E402
             logging.getLogger("research_agent.core").exception("_integrated_analysis error: %s", e)
             return {
                 "analysis_result": None,
@@ -726,8 +723,8 @@ class ResearchAgent:
         # 保存图表到 uploads 目录，供前端内联显示
         figures = result["figures"]
         if figures:
-            import base64, uuid
-            from pathlib import Path
+            import base64  # noqa: E402
+            import uuid  # noqa: E402
             uploads_dir = UPLOAD_DIR
             uploads_dir.mkdir(parents=True, exist_ok=True)
             figure_md_lines = []
@@ -787,13 +784,13 @@ class ResearchAgent:
             time_range_label: 时间范围标签 (如 "最近一个月")
         """
         try:
-            from backend.analysis.monitoring_service import (
+            from backend.analysis.monitoring_service import (  # noqa: E402
                 get_latest as svc_get_latest,
                 get_summary as svc_get_summary,
                 query_measurements,
             )
-            from backend.db.monitoring_session import AsyncSessionLocal
-            from backend.db.monitoring_models import DATA_TYPE_LABEL_MAP
+            from backend.db.monitoring_session import AsyncSessionLocal  # noqa: E402
+            from backend.db.monitoring_models import DATA_TYPE_LABEL_MAP  # noqa: E402
 
             async with AsyncSessionLocal() as db:
                 # If time range specified, use query_measurements for rich data
@@ -840,11 +837,16 @@ class ResearchAgent:
                 # Last resort: summary
                 summary = await svc_get_summary(db, data_type)
                 if summary.get("success"):
+                    total_records = summary.get("total_records", 0)
+                    station_count = summary.get("station_count", 0)
+                    time_range = summary.get("time_range", {})
+                    tr_start = time_range.get("start", "")
+                    tr_end = time_range.get("end", "")
                     return (
                         f"数据类型: {DATA_TYPE_LABEL_MAP.get(data_type, data_type)}\n"
-                        f"总记录数: {summary.get("total_records", 0)}\n"
-                        f"站点数: {summary.get("station_count", 0)}\n"
-                        f"时间范围: {summary.get("time_range", {}).get("start", "")} ~ {summary.get("time_range", {}).get("end", "")}"
+                        f"总记录数: {total_records}\n"
+                        f"站点数: {station_count}\n"
+                        f"时间范围: {tr_start} ~ {tr_end}"
                     )
 
             return f"监测数据库中没有 {DATA_TYPE_LABEL_MAP.get(data_type, data_type)} 类型的数据"
@@ -899,9 +901,9 @@ class ResearchAgent:
                     generate_report=intent["needs_report"],
                 )
                 if integrated["analysis_text"]:
-                    context_parts.append(f"## 数据分析结果\n{integrated["analysis_text"]}")
+                    context_parts.append(f"## 数据分析结果\n{integrated['analysis_text']}")
                 if integrated["report_text"]:
-                    context_parts.append(f"## 报告信息\n{integrated["report_text"]}")
+                    context_parts.append(f"## 报告信息\n{integrated['report_text']}")
             except Exception as e:
                 logger.exception("Integrated analysis failed")
                 context_parts.append(f"## 分析过程异常\n{e}")
@@ -981,12 +983,12 @@ class ResearchAgent:
                     generate_report=intent["needs_report"],
                 )
                 if integrated["analysis_text"]:
-                    context_parts.append(f"## 数据分析结果\n{integrated["analysis_text"]}")
+                    context_parts.append(f"## 数据分析结果\n{integrated['analysis_text']}")
                 if integrated["analysis_stream"]:
                     yield integrated["analysis_stream"]
                     yield "\n\n"
                 if integrated["report_text"]:
-                    context_parts.append(f"## 报告信息\n{integrated["report_text"]}")
+                    context_parts.append(f"## 报告信息\n{integrated['report_text']}")
                 if integrated["report_stream"]:
                     yield integrated["report_stream"]
                     yield "\n\n"
@@ -1032,7 +1034,7 @@ class ResearchAgent:
         Args:
             messages: List of message dicts with 'role' and 'content' keys.
         """
-        from backend.models.base import Message as LLMMessage
+        from backend.models.base import Message as LLMMessage  # noqa: E402
         for msg in messages:
             role = msg.get("role", "")
             content = msg.get("content", "")
@@ -1042,20 +1044,19 @@ class ResearchAgent:
     # ═══════════════════════════ NL2Query 接口 ═══════════════════════════
     async def nl2query_code(self, query: str, data_type: str = "gnss", data_description: str = "",
                           file_id: str = "", data_schema: Optional[dict] = None) -> dict:
-        from backend.analysis.codegen import generate_code
+        from backend.analysis.codegen import generate_code  # noqa: E402
         return await generate_code(query, data_type, data_description, self.model_id, data_schema)
     async def nl2query_execute(self, query: str, data_type: str = "gnss", data_description: str = "",
                                file_id: str = "", use_cache: bool = True) -> dict:
-        from backend.analysis.codegen import generate_code
-        from backend.core.sandbox import CodeSandbox
-        from backend.analysis.cache import QueryCache
+        from backend.core.sandbox import CodeSandbox  # noqa: E402
+        from backend.analysis.cache import QueryCache  # noqa: E402
 
         # Load data if a file was specified
         df = None
         data_schema = None
         sandbox_context = None
         if file_id:
-            from backend.analysis.data_loader import load_data_for_analysis, dataframe_to_sandbox_context
+            from backend.analysis.data_loader import load_data_for_analysis, dataframe_to_sandbox_context  # noqa: E402
             df, data_schema, err = load_data_for_analysis(file_id)
             if err:
                 return {"success": False, "code": "", "result": {}, "error": f"数据读取失败: {err}"}
@@ -1065,8 +1066,8 @@ class ResearchAgent:
         # If no file_id but data_type is a known monitoring type, auto-load from DB
         if not file_id and data_type in ("groundwater", "rainfall", "pore_pressure", "gnss", "insar"):
             try:
-                from backend.analysis.monitoring_service import get_all_data_for_analysis
-                from backend.analysis.data_loader import dataframe_to_sandbox_context, extract_data_schema
+                from backend.analysis.monitoring_service import get_all_data_for_analysis  # noqa: E402
+                from backend.analysis.data_loader import dataframe_to_sandbox_context, extract_data_schema  # noqa: E402
                 monitoring_df = await get_all_data_for_analysis(data_type)
                 if monitoring_df is not None and not monitoring_df.empty:
                     sandbox_context = dataframe_to_sandbox_context(monitoring_df)
@@ -1099,8 +1100,8 @@ class ResearchAgent:
 
     async def _retrieve_context(self, query: str) -> str:
         try:
-            import asyncio
-            from backend.retrieval.vector_store import get_vector_store
+            import asyncio  # noqa: E402
+            from backend.retrieval.vector_store import get_vector_store  # noqa: E402
             store = get_vector_store()
             results = await asyncio.to_thread(store.search, query, top_k=3)
             if results:
@@ -1234,7 +1235,7 @@ class ResearchAgent:
     async def _react_tool_analyze(self, query: str, data_type: str = "gnss") -> str:
         """Execute NL2Query analysis and return observation."""
         try:
-            import json
+            import json  # noqa: E402
             result = await self.nl2query_execute(query=query, data_type=data_type, use_cache=True)
             if result.get("success"):
                 res = result.get("result", {})
@@ -1259,7 +1260,7 @@ class ResearchAgent:
     async def _react_tool_search_knowledge(self, query: str) -> str:
         """Search vector knowledge base."""
         try:
-            from backend.retrieval.vector_store import get_vector_store
+            from backend.retrieval.vector_store import get_vector_store  # noqa: E402
             store = get_vector_store()
             results = store.search(query, top_k=3)
             if not results:
@@ -1293,8 +1294,8 @@ class ResearchAgent:
     async def _react_tool_generate_report(self, report_type: str, data: dict) -> str:
         """Generate monitoring report."""
         try:
-            from backend.reporting.report_generator import ReportGenerator
-            from datetime import datetime
+            from backend.reporting.report_generator import ReportGenerator  # noqa: E402
+            from datetime import datetime  # noqa: E402
             gen = ReportGenerator()
             data.setdefault("title", "Analysis Report")
             data.setdefault("date", datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -1326,7 +1327,7 @@ class ResearchAgent:
                 json_str = content.split("```")[1].split("```")[0].strip()
             else:
                 json_str = content
-            import json
+            import json  # noqa: E402
             return json.loads(json_str)
         except Exception as e:
             return {"thought": "Parse error", "action": "final_answer", "action_input": {"answer": str(e)}}
@@ -1376,7 +1377,7 @@ class ResearchAgent:
                 yield "Observation: " + observation + "\n\n"
             else:
                 yield "Unknown action: " + str(action) + "\n\n"
-            import json
+            import json  # noqa: E402
             react_history.append({"role": "assistant", "content": json.dumps(step, ensure_ascii=False)})
             react_history.append({"role": "system", "content": "Observation: " + observation})
         yield "Max iterations reached.\n"
@@ -1388,5 +1389,5 @@ class ResearchAgent:
             if model_id:
                 return model_id
             return ""
-        except Exception as e:
+        except Exception:
             return ""

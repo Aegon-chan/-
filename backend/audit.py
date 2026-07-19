@@ -5,7 +5,6 @@ for security review and operational transparency.
 """
 from __future__ import annotations
 
-import json
 import logging
 import time
 import uuid
@@ -116,7 +115,6 @@ class _AuditDB:
 
     def cleanup(self, keep_days: int = 90):
         import sqlite3
-        cutoff = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.execute(
                 "DELETE FROM audit_log WHERE timestamp < date('now', :days)",

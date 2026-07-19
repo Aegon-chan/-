@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import pytest
-import asyncio
 
 
 class TestRAGAnalysisReportPipeline:
@@ -67,7 +66,7 @@ class TestRAGAnalysisReportPipeline:
     async def test_full_pipeline_mock(self, agent):
         """Test a simplified pipeline: chat -> memory -> feedback."""
         # Step 1: Chat
-        response = await agent.chat("展示降雨量和地下水位相关性")
+        await agent.chat("展示降雨量和地下水位相关性")
 
         # Step 2: Implicit feedback recorded
         signals = agent.implicit_feedback.record_query(

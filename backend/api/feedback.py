@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 from fastapi import APIRouter, Query
 
-from backend.self_growth.feedback import FeedbackCollector
 from backend.core.agent import ResearchAgent
 
 router = APIRouter()

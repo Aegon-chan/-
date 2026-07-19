@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import pytest
-from unittest.mock import AsyncMock, patch
 
 
 class TestResearchAgentInit:
@@ -91,7 +90,6 @@ class TestImplicitFeedbackIntegration:
         import os
         os.environ["FEATURE_IMPLICIT_FEEDBACK"] = "false"
         try:
-            from backend.core.agent import ResearchAgent
             from backend.config import settings
             assert settings.feature_implicit_feedback is False
         except AttributeError:

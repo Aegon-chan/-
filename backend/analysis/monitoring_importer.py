@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import pandas as pd
 
@@ -22,7 +22,6 @@ from backend.db.monitoring_models import (
     PorePressureMeasurement,
     GnssMeasurement,
     InSARMeasurement,
-    get_model_for_data_type,
     get_time_column_name,
 )
 
@@ -346,11 +345,9 @@ async def import_from_df(
 
     records = []
     seen_stations = set()
-    station_cache = {}
 
     for idx, row in df_std.iterrows():
         row_num = idx + 2  # 1-indexed with header
-        row_errors = []
 
         # Parse station_code
         sc = str(row.get("station_code", "")).strip()
@@ -562,6 +559,7 @@ def preview_import(
     file_path: Path,
     data_type: str,
 ) -> dict:
+    station_code_override: str = "",
     """预览并校验导入文件（不入库）"""
     from backend.analysis.data_loader import read_data_file
 
@@ -584,7 +582,6 @@ def preview_import(
 
     time_col_name = get_time_column_name(data_type)
     schema = COLUMN_SCHEMAS.get(data_type, {})
-    all_cols = schema["required"] + schema["optional"]
 
     # Preview results
     sample_rows = df.head(5).fillna("").to_dict(orient="records")

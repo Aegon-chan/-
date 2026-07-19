@@ -2,9 +2,7 @@
 """Validation tests for the 13 bug fixes."""
 from __future__ import annotations
 
-import pytest
 import time
-from unittest.mock import MagicMock, patch
 
 ROOT = r"C:\Users\24622\Desktop\科研Agent"
 
@@ -18,7 +16,7 @@ class TestHealthUptime:
         # Should be set to a realistic timestamp, not 0.0
         assert m._start_time > 0, f"Expected _start_time > 0, got {m._start_time}"
         # Should be close to current time
-        assert abs(m._start_time - time.time()) < 3600, f"_start_time too far from now"
+        assert abs(m._start_time - time.time()) < 3600, "_start_time too far from now"
 
     def test_health_uptime_calculation(self):
         """Verify the uptime calculation logic is correct."""

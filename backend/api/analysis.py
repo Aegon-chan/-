@@ -1,7 +1,6 @@
 """数据分析 API 路由"""
 from __future__ import annotations
 
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
@@ -100,8 +99,8 @@ async def get_analysis_task(
 # NL2Query endpoints
 # ═══════════════════════════════════════════════════════════════
 
-from pydantic import BaseModel, Field
-from typing import Optional
+from pydantic import BaseModel, Field  # noqa: E402
+from typing import Optional  # noqa: E402
 
 class CodeGenRequest(BaseModel):
     query: str = Field(..., description="自然语言查询")
@@ -247,10 +246,3 @@ async def list_query_cache(limit: int = Query(20, description="返回条数")):
     return {"entries": cache.list_recent(limit=limit)}
 
 
-@router.delete("/nl2query/cache/{cache_key}", summary="清除查询缓存")
-async def clear_query_cache(cache_key: str):
-    """清除指定的查询缓存"""
-    from backend.analysis.cache import QueryCache
-    cache = QueryCache()
-    cache.delete(cache_key)
-    return {"success": True}

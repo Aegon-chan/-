@@ -140,15 +140,33 @@ def extract_data_schema(df: pd.DataFrame) -> dict:
 def dataframe_to_sandbox_context(df: pd.DataFrame) -> dict[str, Any]:
     """Convert a DataFrame into serializable variables for sandbox injection.
 
-    The DataFrame is injected as variable ``df`` in the sandbox namespace,
-    along with column metadata.
+    NaN/Inf values are explicitly converted to None *after* the json round-trip,
+    because pandas float64 columns silently coerce None back to NaN.
+    This ensures repr() in the sandbox wrapper never emits bare ``nan``/``inf``
+    tokens (which would cause NameError at runtime).
     """
     import json
+    import math
+
     # Include named index (e.g. DatetimeIndex from monitoring data) as a regular column
     if df.index.name is not None and df.index.name not in df.columns:
         df = df.reset_index()
+
     records = df.to_dict(orient="records")
     serializable_records = json.loads(json.dumps(records, default=str, ensure_ascii=False))
+
+    # Post-process: convert NaN/Inf back to None (json round-trip preserves NaN).
+    def _clean(obj):
+        if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+            return None
+        if isinstance(obj, dict):
+            return {k: _clean(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [_clean(v) for v in obj]
+        return obj
+
+    serializable_records = _clean(serializable_records)
+
     return {
         "df": serializable_records,
         "_col_names": list(df.columns),

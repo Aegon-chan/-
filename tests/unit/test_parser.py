@@ -1,10 +1,8 @@
 """Tests for the data format parser module."""
 from __future__ import annotations
 
-import json
 import pytest
 import pandas as pd
-import numpy as np
 from pathlib import Path
 from backend.analysis.parser import load_data, load_data_dir
 

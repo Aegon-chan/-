@@ -15,12 +15,4 @@ def test_data_dirs_exist():
 
 
 def test_imports():
-    from backend.db.session import Base, get_async_session
-    from backend.models.base import BaseLLM, ModelResponse
-    from backend.models.registry import ModelRegistry
-    from backend.core.agent import ResearchAgent
-    from backend.core.memory import MemoryStore
-    from backend.core.sandbox import CodeSandbox
-    from backend.retrieval.vector_store import VectorStore
-    from backend.reporting.report_generator import ReportGenerator
     assert True

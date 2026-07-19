@@ -6,8 +6,6 @@ and usage patterns to keep the most relevant memories at the top.
 from __future__ import annotations
 
 import logging
-import math
-from typing import Optional
 
 logger = logging.getLogger("research_agent.memory_optimizer")
 

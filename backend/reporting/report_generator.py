@@ -10,11 +10,11 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from backend.reporting.charts import save_image, timeseries
+from backend.reporting.charts import save_image
 
 logger = logging.getLogger("research_agent.reporting")
 
@@ -248,7 +248,6 @@ class ReportGenerator:
         if not match:
             return None
         try:
-            import plotly.io as pio
             from plotly.graph_objects import Figure
 
             fig = Figure()

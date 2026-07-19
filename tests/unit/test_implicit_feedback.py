@@ -1,7 +1,6 @@
 """Tests for ImplicitFeedbackCollector."""
 from __future__ import annotations
 
-import pytest
 from backend.self_growth.implicit_feedback import ImplicitFeedbackCollector
 
 

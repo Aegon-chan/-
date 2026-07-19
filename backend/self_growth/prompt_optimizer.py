@@ -1,10 +1,8 @@
 """Prompt auto-optimization module (APE + version management)."""
 from __future__ import annotations
 
-import json
 import logging
 import sqlite3
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -61,7 +59,7 @@ class PromptOptimizer:
                 "SELECT MAX(version) FROM prompt_templates WHERE task_type=?", (task_type,)
             ).fetchone()[0]
             version = (last or 0) + 1
-            cur = conn.execute(
+            conn.execute(
                 "INSERT INTO prompt_templates (task_type, version, content, parent_version) VALUES (?, ?, ?, ?)",
                 (task_type, version, content, parent_version),
             )

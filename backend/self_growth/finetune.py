@@ -10,7 +10,6 @@ import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("research_agent.finetune")
 
@@ -113,7 +112,7 @@ class FineTuner:
 
         try:
             # Try to run actual LoRA training
-            result = await self._run_lora_training(dataset_path, str(out_dir), lora_r, num_epochs)
+            await self._run_lora_training(dataset_path, str(out_dir), lora_r, num_epochs)
             logger.info("LoRA training complete -> %s", out_dir)
 
             # Record success
@@ -182,7 +181,7 @@ class FineTuner:
         model = get_peft_model(model, lora_config)
 
         # Load dataset
-        dataset = load_dataset("json", data_files=dataset_path, split="train")
+        load_dataset("json", data_files=dataset_path, split="train")
 
         # Training config
         training_args = TrainingArguments(
@@ -206,7 +205,6 @@ class FineTuner:
                 texts.append(text)
             tok = tokenizer(texts, truncation=True, max_length=512, padding="max_length")
             tok["labels"] = tok["input_ids"].copy()
-            import copy
             return dict(tok)
 
         from datasets import load_dataset as _ld
@@ -323,7 +321,7 @@ class FineTuner:
         except ImportError as e:
             logger.warning("Cannot deploy LoRA: deps missing - %s", e)
             return ""
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to deploy LoRA model")
             return ""
 
@@ -347,7 +345,7 @@ class FineTuner:
 
 # ═══════════════════════════ 反馈→训练数据管线 ═══════════════════════════
 
-import pathlib
+import pathlib  # noqa: E402
 class FeedbackDatasetBuilder:
     """Build HuggingFace Datasets from user feedback + conversation history.
 

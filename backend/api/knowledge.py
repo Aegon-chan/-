@@ -1,6 +1,7 @@
 """知识库 API 路由"""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, UploadFile, File

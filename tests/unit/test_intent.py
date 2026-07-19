@@ -77,8 +77,8 @@ class TestIntentDataTypeDetection:
     def test_analysis_patterns(self, query, expected_type):
         agent = self._make_agent()
         result = agent._detect_intent(query)
-        assert result["data_type"] == expected_type, (
-            f"query={query!r}: expected data_type={expected_type!r}, got {result["data_type"]!r}"
+        assert result['data_type'] == expected_type, (
+            f"query={query!r}: expected data_type={expected_type!r}, got {result['data_type']!r}"
         )
 
     @pytest.mark.parametrize("query", [
@@ -95,11 +95,11 @@ class TestIntentDataTypeDetection:
         result = agent._detect_intent(query)
         if query == "画个图":
             pytest.skip("画个图未匹配到分析关键词，需提升检测精度")
-        assert result["data_type"] == "gnss"
+        assert result['data_type'] == "gnss"
         assert result["needs_analysis"] is True
         agent = self._make_agent()
         result = agent._detect_intent(query)
-        assert result["data_type"] == "gnss"
+        assert result['data_type'] == "gnss"
         assert result["needs_analysis"] is True
 
 
@@ -117,7 +117,7 @@ class TestIntentFlags:
         agent = self._make_agent()
         result = agent._detect_intent("给我出一份降雨量分析报告")
         assert result["needs_report"] is True
-        assert result["data_type"] == "rainfall"
+        assert result['data_type'] == "rainfall"
 
     def test_query_only(self):
         agent = self._make_agent()
@@ -133,7 +133,7 @@ class TestIntentFlags:
         assert result["needs_analysis"] is True
         assert result["needs_report"] is False
         assert result["needs_data_query"] is True
-        assert result["data_type"] == "gnss"
+        assert result['data_type'] == "gnss"
 
     def test_report_by_month(self):
         agent = self._make_agent()
@@ -144,10 +144,10 @@ class TestIntentFlags:
         agent = self._make_agent()
         result = agent._detect_intent("查一下最近七天的降雨量数据")
         assert result["needs_data_query"] is True
-        assert result["data_type"] == "rainfall"
+        assert result['data_type'] == "rainfall"
 
     def test_pore_pressure_data_stats(self):
         agent = self._make_agent()
         result = agent._detect_intent("统计最近一个月的孔压数据范围")
         assert result["needs_data_query"] is True
-        assert result["data_type"] == "pore_pressure"
+        assert result['data_type'] == "pore_pressure"

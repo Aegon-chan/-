@@ -1,7 +1,7 @@
 """模型适配器单元测试"""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -53,8 +53,10 @@ class TestModelRegistry:
     def test_fallback_chain(self):
         from backend.models.registry import ModelRegistry
 
-        mock_a = MagicMock(); mock_a.model_id = "model-a"
-        mock_b = MagicMock(); mock_b.model_id = "model-b"
+        mock_a = MagicMock()
+        mock_a.model_id = "model-a"
+        mock_b = MagicMock()
+        mock_b.model_id = "model-b"
 
         ModelRegistry.register_llm("model-a", mock_a, set_default=True)
         ModelRegistry.register_llm("model-b", mock_b)

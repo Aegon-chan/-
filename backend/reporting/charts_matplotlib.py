@@ -5,11 +5,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.dates import DateFormatter
-from matplotlib.ticker import AutoMinorLocator, MaxNLocator
+from matplotlib.ticker import AutoMinorLocator
 from pathlib import Path
 import logging
-import matplotlib.ticker as mticker
-import matplotlib.font_manager as _fm
 
 # --- Configure Chinese (CJK) font support ---
 # Explicitly set Chinese-capable fonts so matplotlib can render CJK glyphs.
@@ -20,8 +18,8 @@ plt.rcParams["font.sans-serif"] = [
 ]
 plt.rcParams["axes.unicode_minus"] = False
 
-from backend.reporting.charts import _ols
-import numpy as np
+from backend.reporting.charts import _ols  # noqa: E402
+import numpy as np  # noqa: E402
 
 # Publication style
 _PUB_FONTSIZE = 11
@@ -229,7 +227,8 @@ def mpl_profile(
 
 def figure_to_base64(fig: plt.Figure, dpi: int = _PUB_DPI) -> str:
     """Convert a matplotlib figure to a base64 PNG string."""
-    import base64 as _b64, io as _io
+    import base64 as _b64
+    import io as _io
     buf = _io.BytesIO()
     fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
     buf.seek(0)

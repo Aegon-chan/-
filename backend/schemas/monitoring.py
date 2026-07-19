@@ -1,7 +1,6 @@
 """监测数据 API 的 Pydantic 请求/响应模型。"""
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field

@@ -1,4 +1,4 @@
-"""NL to Python code generation.
+﻿﻿"""NL to Python code generation.
 
 Uses LLM to translate natural language analysis queries into executable
 Python code that leverages the existing analysis modules.
@@ -35,6 +35,8 @@ CODEGEN_SYSTEM_PROMPT = """你是一位专业的地质灾害监测数据分析�
 9. **生成的代码应该是自包含的**，可以直接执行。
 11. **添加足够的中文注释**解释每步操作。
 12. **禁止引用未定义的变量**：沙箱中只定义了 _results 作为结果存储字典（见规则 2）。不允许使用 sandboxresults、results、result 或其他未在规则中声明的变量名。所有数值结果只能通过 _results["_data"]["key"] = value 存储。
+13. **子图网格尺寸必须与数据量匹配**：使用 `plt.subplots(nrows, ncols)` 时，保证网格能容纳所有子图。如果待绘制的图表数量是动态的（例如基于站点数），应基于数据动态计算 nrows/ncols，或者使用 `plt.subplots(1, N)` 扁平结构 + `axes[i]` 索引，而非硬编码固定行数后用 `axes[i, 0]` 二维索引。禁止生成可能越界的 `axes[i, 0]` 或 `axes[i, j]` 访问。
+14. **使用 `plt.boxplot()` 而非 `ax.boxplot()`**：在绘制箱线图时，始终使用 `plt.boxplot(data, labels=...)` 而非 `ax.boxplot(data, labels=...)`，因为 Matplotlib 3.6+ 将 Axes 方法的 `labels` 参数重命名为 `tick_labels`，但 pyplot 版本保留了向下兼容的 `labels` 参数。
 
 ## 输出格式
 只输出纯 Python 代码，用 `python 标记包围。代码中不要包含任何解释性文字。
@@ -188,3 +190,4 @@ def make_context_from_data(df_dict: dict) -> dict:
         else:
             context[name] = df
     return context
+13. **子图网格尺寸必须与数据量匹配**：使用 `plt.subplots(nrows, ncols)` 时，保证网格能容纳所有子图。如果待绘制的图表数量是动态的（例如基于站点数），应基于数据动态计算 nrows/ncols，或者使用 `plt.subplots(1, N)` 扁平结构 + `axes[i]` 索引，而非硬编码固定行数后用 `axes[i, 0]` 二维索引。禁止生成可能越界的 `axes[i, 0]` 或 `axes[i, j]` 访问。

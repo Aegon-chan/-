@@ -20,7 +20,7 @@ class TestMemoryStore:
 
     def test_add_duplicate_key(self, store):
         store.add("user1", "preference", "key1", "value1", weight=1.0)
-        mid2 = store.add("user1", "preference", "key1", "value1_updated", weight=0.5)
+        store.add("user1", "preference", "key1", "value1_updated", weight=0.5)
         results = store.get("user1", memory_type="preference")
         assert len(results) == 1
         assert results[0]["weight"] > 1.0

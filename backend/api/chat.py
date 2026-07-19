@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_async_session
 from backend.db.models import Session as SessionModel, Message
-from backend.schemas.chat import ChatRequest, ChatResponse, StreamEvent
+from backend.schemas.chat import ChatRequest, ChatResponse
 from backend.core.exceptions import NotFoundError, ModelError
 from backend.models.registry import ModelRegistry
 from backend.uploads import process_attachments
@@ -137,7 +137,6 @@ async def stream_chat(
         )
 
     from backend.models.base import Message as LLMMessage
-    from backend.models.base import ContentPart
     multimodal_parts = process_attachments(body.attachments)
     llm_messages = [LLMMessage(role="user", content=body.message, multimodal_parts=multimodal_parts)]
     if session.system_prompt:

@@ -20,7 +20,7 @@ if config.config_file_name is not None:
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 # 瀵煎叆鎵€鏈?ORM 妯″瀷锛屼娇 autogenerate 鑳芥娴嬪埌琛ㄥ畾涔?from backend.db.models import Base, User, Session, Message, Feedback, Memory, AnalysisTask
-from backend.db.session import Base as SessionBase
+from backend.db.session import Base as SessionBase  # noqa: E402
 
 target_metadata = SessionBase.metadata
 

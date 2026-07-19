@@ -46,15 +46,14 @@ node_modules/
 .next/
 dist/
 
-# Data directories\ndata/
-data/
+# Data directories
 
+data/
 # PyInstaller / Desktop build artifacts
 *.spec
 dist/
 build/
 *.exe
-
 
 # Generated reports (track the templates, not the output)
 reports/output/
@@ -72,3 +71,4 @@ backend_start.log
 _verify_active.py
 gen_chunks.py
 inject_chunks.py
+

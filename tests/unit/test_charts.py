@@ -1,7 +1,6 @@
 """Tests for chart generation with config support."""
 from __future__ import annotations
 
-import pytest
 import numpy as np
 
 

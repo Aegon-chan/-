@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import pytest
 import pandas as pd
-from datetime import datetime
 
 from backend.analysis.monitoring_importer import (
     import_from_df,

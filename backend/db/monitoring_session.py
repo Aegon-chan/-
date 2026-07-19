@@ -80,6 +80,5 @@ def get_monitoring_sync_session():
 
 async def init_monitoring_db():
     """启动时创建所有监测数据表（如不存在）"""
-    from backend.db.monitoring_models import MonitoringStation
     async with async_engine.begin() as conn:
         await conn.run_sync(MonitoringBase.metadata.create_all)

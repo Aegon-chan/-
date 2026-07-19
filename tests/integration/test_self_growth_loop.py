@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import pytest
-import json
 import os
 
 
@@ -108,7 +107,7 @@ class TestSelfGrowthLoop:
     def test_prompt_versioning(self):
         """Prompt 模板应有版本管理和评分排名。"""
         from backend.self_growth.prompt_optimizer import PromptOptimizer
-        import tempfile, os
+        import tempfile
         db_path = os.path.join(tempfile.mkdtemp(), "test_prompts_isolated.db")
         opt = PromptOptimizer(db_path=db_path)
         opt.save_template("analysis_prompt_test", "v1 基础分析prompt")

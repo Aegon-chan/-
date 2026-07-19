@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from backend.analysis.cross_correlation import (
     cross_correlation,

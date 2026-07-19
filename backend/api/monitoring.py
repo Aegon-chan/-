@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import io
-import json
 import logging
 import uuid
 from datetime import datetime
@@ -24,7 +23,6 @@ from backend.analysis.monitoring_importer import (
 from backend.analysis.monitoring_service import (
     DATA_TYPES,
     batch_cleanup as service_batch_cleanup,
-    count_station_data_by_type,
     create_station as service_create_station,
     delete_measurements as service_delete_measurements,
     delete_station as service_delete_station,

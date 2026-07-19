@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_async_session

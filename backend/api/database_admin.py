@@ -9,8 +9,6 @@ without direct database access.
 from __future__ import annotations
 
 import logging
-import csv
-import io
 from pathlib import Path
 from typing import Optional
 

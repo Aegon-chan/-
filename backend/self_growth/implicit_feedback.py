@@ -13,11 +13,9 @@ import json
 import logging
 import sqlite3
 import time
-from collections import defaultdict, Counter
-from datetime import datetime, timedelta
+from collections import defaultdict
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("research_agent.implicit_feedback")
 

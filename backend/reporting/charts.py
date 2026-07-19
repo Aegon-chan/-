@@ -9,7 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Union
 
-import numpy as np
 import plotly.graph_objects as go
 import plotly.io as pio
 
