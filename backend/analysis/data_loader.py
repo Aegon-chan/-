@@ -88,6 +88,7 @@ def extract_data_schema(df: pd.DataFrame) -> dict:
             "row_count": 0,
             "sample_rows": [],
             "data_description_text": "(no data)",
+        "time_range": time_range,
         }
 
     row_count = len(df)
@@ -128,12 +129,32 @@ def extract_data_schema(df: pd.DataFrame) -> dict:
         vals = "; ".join(f"{k}={v}" for k, v in row.items())
         lines.append(f"  Row {i}: {vals}")
 
+    # Detect datetime cols and compute time range
+    time_range = None
+    for col in df.columns:
+        try:
+            # Skip numeric columns (they would be interpreted as nanoseconds from epoch)
+            col_dtype = df[col].dtype
+            if pd.api.types.is_numeric_dtype(col_dtype) and "datetime" not in str(col_dtype):
+                continue
+            col_series = pd.to_datetime(df[col], errors="coerce")
+            if col_series.notna().sum() > len(df) * 0.8:
+                valid_dates = col_series.dropna()
+                time_range = {"column": col, "start": valid_dates.min().strftime("%Y-%m-%d"), "end": valid_dates.max().strftime("%Y-%m-%d")}
+                lines.append("Time range of " + col + ": " + time_range["start"] + " ~ " + time_range["end"])
+                break
+        except Exception:
+            continue
+    if time_range is None and isinstance(df.index, pd.DatetimeIndex):
+        time_range = {"column": str(df.index.name or "index"), "start": df.index.min().strftime("%Y-%m-%d"), "end": df.index.max().strftime("%Y-%m-%d")}
+        lines.append("Time range of index: " + time_range["start"] + " ~ " + time_range["end"])
     return {
         "column_names": list(df.columns),
         "column_info": column_info,
         "row_count": row_count,
         "sample_rows": sample_rows,
         "data_description_text": "\n".join(lines),
+        "time_range": time_range,
     }
 
 
@@ -167,11 +188,21 @@ def dataframe_to_sandbox_context(df: pd.DataFrame) -> dict[str, Any]:
 
     serializable_records = _clean(serializable_records)
 
+    # Detect columns that were originally datetime (converted to str by JSON)
+    _datetime_cols = []
+    for col, dtype in df.dtypes.items():
+        if "datetime" in str(dtype):
+            _datetime_cols.append(col)
+    # Also check if index was a DatetimeIndex and was reset
+    if hasattr(df, "index") and isinstance(df.index, pd.DatetimeIndex) and df.index.name and df.index.name not in df.columns:
+        pass  # Already covered by column detection after reset_index
+
     return {
         "df": serializable_records,
         "_col_names": list(df.columns),
         "_col_dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
         "_row_count": len(df),
+        "_datetime_columns": _datetime_cols,
     }
 
 

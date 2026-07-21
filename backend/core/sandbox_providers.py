@@ -1,4 +1,4 @@
-﻿""">SandboxProvider ABC + 3 implementations.
+""">SandboxProvider ABC + 3 implementations.
 
 SubprocessProvider (local subprocess, default)
 DockerProvider     (Docker container, single-node production)
@@ -199,6 +199,7 @@ _WRAPPER_EPILOGUE = textwrap.dedent("""\
 def build_wrapper(code: str, context: dict | None = None) -> str:
     """Wrap user code in the figure/data capture prologue/epilogue."""
     context_block = ""
+    conversion_block = ""
     if context:
         parts = []
         for key, val in context.items():
@@ -207,7 +208,16 @@ def build_wrapper(code: str, context: dict | None = None) -> str:
             else:
                 parts.append(f"{key} = {val!r}")
         context_block = "\n".join(parts) + "\n"
-    indented = textwrap.indent(context_block, "    ") + textwrap.indent(code, "    ")
+        # Auto-convert datetime columns that were serialized as strings
+        dt_cols = context.get("_datetime_columns", [])
+        if dt_cols:
+            conv_lines = ["import pandas as pd", "df = pd.DataFrame(df)"]
+            for c in dt_cols:
+                col_str = str(c)
+                conv_lines.append("if " + chr(39) + col_str + chr(39) + " in df.columns: df[" + chr(39) + col_str + chr(39) + "] = pd.to_datetime(df[" + chr(39) + col_str + chr(39) + "])")
+            # (the above uses chr(39) for single quote to avoid escaping issues)
+            conversion_block = "\n".join(conv_lines) + "\n"
+    indented = textwrap.indent(context_block, "    ") + textwrap.indent(conversion_block, "    ") + textwrap.indent(code, "    ")
     return _WRAPPER_PROLOGUE + indented + _WRAPPER_EPILOGUE
 
 

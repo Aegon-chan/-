@@ -1,4 +1,4 @@
-﻿﻿"""NL to Python code generation.
+"""NL to Python code generation.
 
 Uses LLM to translate natural language analysis queries into executable
 Python code that leverages the existing analysis modules.
@@ -24,6 +24,7 @@ CODEGEN_SYSTEM_PROMPT = """你是一位专业的地质灾害监测数据分析�
 1. **数据已预加载**: 如果有用户选择的数据文件，沙箱内已有变量 `df`（list of dicts，当做行列表处理），以及 `_col_names`（列名列表）、`_col_dtypes`（列类型字典）、`_row_count`（行数）。
    → 在代码开头将 df 转为 DataFrame: `df = pd.DataFrame(df)`
    → **不要尝试加载或读取任何文件** — 数据已在内存中。
+   → **datetime 列已经自动转换**：沙箱已自动对 _datetime_columns 中的列执行 pd.to_datetime()，df 中的对应列可直接使用 .dt 访问器。
 2. **不要使用 from backend.analysis 导入** -- 这些模块在沙箱中不可用。
 2. **不要重新定义 _results** -- _results 字典已由沙箱初始化，直接用 _results['_data']['key'] = value 存储结果。
 3. **不要重新定义 _save_fig** -- _save_fig() 已由沙箱提供，直接调用 _save_fig('chart_name') 保存图表。
@@ -40,6 +41,14 @@ CODEGEN_SYSTEM_PROMPT = """你是一位专业的地质灾害监测数据分析�
 
 ## 输出格式
 只输出纯 Python 代码，用 `python 标记包围。代码中不要包含任何解释性文字。
+
+15. **正确按年份筛选数据**：数据的时间列通常是 measurement_time。要筛选特定年份的数据，必须使用正确的条件过滤：
+   - 正确写法：df_filtered = df[df["measurement_time"].dt.year == 2023]
+   - 或：df_filtered = df[(df["measurement_time"] >= "2023-01-01") & (df["measurement_time"] <= "2023-12-31")]
+   - 禁止使用 df.head(365)、df.iloc[:365] 等方式来获取某一年数据
+   - 禁止使用 df.tail(365) 等方式
+   数据可能跨越多个年份，具体时间范围会在 [Available Data Schema] 中给出。必须根据 measurement_time 列的内容来筛选，而不是通过行号截取。
+16. **始终假设数据包含 measurement_time 列**（监测数据标准列名），类型为 datetime。如果需要按时间分析，先确保转换：df["measurement_time"] = pd.to_datetime(df["measurement_time"])。
 """
 
 def build_generation_prompt(
@@ -71,6 +80,10 @@ def build_generation_prompt(
     if data_schema and data_schema.get("column_names"):
         user_content += "\n[Available Data Schema]\n"
         user_content += data_schema.get("data_description_text", "") + "\n"
+        tr = data_schema.get("time_range")
+        if tr:
+            user_content += "\nData time range: " + tr["start"] + " ~ " + tr["end"] + " (column: " + tr["column"] + ")\n"
+
         user_content += (
             "\nData is pre-loaded as variable ``df`` (list of dicts) in the sandbox. "
             "Convert it at the start of your code:\n"
@@ -182,7 +195,15 @@ async def generate_code(
 
 
 def make_context_from_data(df_dict: dict) -> dict:
-    """Convert DataFrames to dict for sandbox context injection."""
+    """Convert DataFrames to dict for sandbox context injection.
+15. **正确按年份筛选数据**：数据的时间列通常是 measurement_time。要筛选特定年份的数据，必须使用正确的条件过滤：
+   - ✅ 正确写法：df_filtered = df[df['measurement_time'].dt.year == 2023]
+   - ✅ 或：df_filtered = df[(df['measurement_time'] >= '2023-01-01') & (df['measurement_time'] <= '2023-12-31')]
+   - ❌ 禁止使用：df.head(365)、df.iloc[:365] 等方式来获取某一年数据（数据起始日期不一定是1月1日）
+   - ❌ 禁止使用：df.tail(365) 等方式
+   数据可能跨越多个年份（2020-2026），具体时间范围会在 [Available Data Schema] 中给出。必须根据 measurement_time 列的内容来筛选，而不是通过行号截取。
+16. **始终假设数据包含 measurement_time 列**（监测数据标准列名），类型为 datetime。如果需要按时间分析，先确保转换：df['measurement_time'] = pd.to_datetime(df['measurement_time'])。
+"""
     context = {}
     for name, df in df_dict.items():
         if hasattr(df, "to_dict"):
@@ -190,4 +211,3 @@ def make_context_from_data(df_dict: dict) -> dict:
         else:
             context[name] = df
     return context
-13. **子图网格尺寸必须与数据量匹配**：使用 `plt.subplots(nrows, ncols)` 时，保证网格能容纳所有子图。如果待绘制的图表数量是动态的（例如基于站点数），应基于数据动态计算 nrows/ncols，或者使用 `plt.subplots(1, N)` 扁平结构 + `axes[i]` 索引，而非硬编码固定行数后用 `axes[i, 0]` 二维索引。禁止生成可能越界的 `axes[i, 0]` 或 `axes[i, j]` 访问。
