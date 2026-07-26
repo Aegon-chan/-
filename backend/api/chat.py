@@ -136,17 +136,34 @@ async def stream_chat(
             detail=f"模型 {model_id} 未注册，请先在设置中配置 API Key 并重启服务",
         )
 
-    from backend.models.base import Message as LLMMessage
-    multimodal_parts = process_attachments(body.attachments)
-    llm_messages = [LLMMessage(role="user", content=body.message, multimodal_parts=multimodal_parts)]
-    if session.system_prompt:
-        llm_messages.insert(0, LLMMessage(role="system", content=session.system_prompt))
+    # 创建 ResearchAgent 并加载历史（复用完整的分析/查询管道）
+    from backend.core.agent import ResearchAgent
+    agent = ResearchAgent(
+        session_id=body.session_id,
+        user_id=session.user_id,
+        model_id=model_id,
+    )
+    history_q = (
+        select(Message)
+        .where(Message.session_id == body.session_id)
+        .order_by(Message.created_at)
+    )
+    history_rows = (await db.execute(history_q)).scalars().all()
+    agent.load_history([
+        {"role": m.role, "content": m.content}
+        for m in history_rows
+    ])
+
+    att_dicts = None
+    if body.attachments:
+        att_dicts = [{"url": a.url, "filename": a.filename, "mime_type": a.mime_type} for a in body.attachments]
 
     async def event_generator():
         full_content = ""
-        async for token in llm.stream_chat(llm_messages):
-            full_content += token
-            yield f"data: {json.dumps({'event': 'token', 'data': token})}\n\n"
+        async for token in agent.stream_chat(body.message, attachments=att_dicts):
+            if token:
+                full_content += token
+                yield f"data: {json.dumps({'event': 'token', 'data': token})}\n\n"
 
         # 存储完整回复
         msg = Message(

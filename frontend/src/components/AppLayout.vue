@@ -116,7 +116,7 @@ function onDragEnd() {
     </div>
 
     <main class="main-content">
-      <router-view />
+      <router-view style="flex:1; display:flex; flex-direction:column; min-height:0" />
     </main>
   </div>
 </template>
@@ -169,5 +169,5 @@ function onDragEnd() {
   bottom: 0;
 }
 
-.main-content { flex:1; background:#f5f5f7; overflow-y:auto; min-width:0; }
+.main-content { flex:1; background:#f5f5f7; min-width:0; display:flex; flex-direction:column; min-height:0; overflow-y:auto; }
 </style>

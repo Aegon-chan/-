@@ -286,7 +286,7 @@ watch(
 .collapse-info { font-size: 11px; color: #999; margin-left: auto; }
 
 /* Messages list */
-.messages-list { display: flex; flex-direction: column; gap: 4px; max-width: 760px; margin: 0 auto; width: 100%; }
+.messages-list { display: flex; flex-direction: column; gap: 4px; max-width: 900px; margin: 0 auto; width: 100%; }
 
 /* Turn */
 .turn {
@@ -345,8 +345,8 @@ watch(
 .message.user { justify-content: flex-end; }
 .message.assistant { justify-content: flex-start; margin-top: 8px; }
 .avatar { width: 28px; height: 28px; border-radius: 7px; background: #6366f1; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
-.message-content { max-width: 100%; display: flex; flex-direction: column; gap: 6px; }
-.message-bubble { padding: 10px 14px; border-radius: 10px; font-size: 14px; line-height: 1.6; }
+.message-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.message-bubble { padding: 10px 14px; border-radius: 10px; font-size: 14px; line-height: 1.6; overflow-wrap: break-word; word-break: break-word; min-width: 0; }
 .user-bubble { background: #6366f1; color: #fff; border-bottom-right-radius: 4px; }
 .assistant-bubble { background: #f5f5f7; color: #333; border: 1px solid #e5e7eb; border-bottom-left-radius: 4px; }
 .streaming-indicator { margin-top: 4px; color: #818cf8; }

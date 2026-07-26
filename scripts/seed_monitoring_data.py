@@ -91,7 +91,6 @@ def seed_monitoring_data(overwrite: bool = False) -> dict:
         station_ids = {}
         for code, name, stype, lng, lat, alt, desc in STATIONS:
             station = MonitoringStation(
-                id=_uuid(),
                 station_code=code,
                 station_name=name,
                 station_type=stype,
@@ -105,7 +104,7 @@ def seed_monitoring_data(overwrite: bool = False) -> dict:
             session.flush()
             station_ids[code] = station.id
         session.commit()
-        logger.info("已创建 %d 个监测站点", len(STATIONS))
+        logger.info("monitoring stations created", len(STATIONS))
 
         # 2. Generate time series data
         start_date = datetime(2025, 1, 1, 8, 0, 0)
@@ -139,12 +138,10 @@ def seed_monitoring_data(overwrite: bool = False) -> dict:
                 wl = round(base + season + trend + noise + rain_effect, 2)
                 wd = round(abs(wl - base) + np.random.uniform(10, 15), 2)
                 temp = round(16 + 8 * np.sin(2 * np.pi * (i / 365.0 - 0.25)) + np.random.normal(0, 0.5), 1)
-                cond = round(300 + 50 * np.sin(2 * np.pi * (i / 365.0)) + np.random.normal(0, 20), 0)
 
                 objs.append(GroundwaterMeasurement(
-                    id=_uuid(), station_id=sid, measurement_time=dt,
+                    station_id=sid, measurement_time=dt,
                     water_level=wl, water_depth=wd, temperature=temp,
-                    conductivity=cond,
                 ))
             session.bulk_save_objects(objs)
             session.commit()
@@ -186,7 +183,7 @@ def seed_monitoring_data(overwrite: bool = False) -> dict:
                     duration = 0
 
                 objs.append(RainfallMeasurement(
-                    id=_uuid(), station_id=sid, measurement_time=dt,
+                    station_id=sid, measurement_time=dt,
                     rainfall_amount=amount, intensity=intensity, duration_min=duration,
                 ))
             session.bulk_save_objects(objs)
@@ -216,7 +213,7 @@ def seed_monitoring_data(overwrite: bool = False) -> dict:
                 temp = round(16 + 8 * np.sin(2 * np.pi * (i * 7 / 365.0 - 0.25)) + np.random.normal(0, 0.8), 1)
 
                 objs.append(PorePressureMeasurement(
-                    id=_uuid(), station_id=sid, measurement_time=dt,
+                    station_id=sid, measurement_time=dt,
                     pressure_value=pv, temperature=temp,
                 ))
             session.bulk_save_objects(objs)
@@ -248,7 +245,7 @@ def seed_monitoring_data(overwrite: bool = False) -> dict:
                 vdop = round(np.random.uniform(1.5, 4.0), 1)
 
                 objs.append(GnssMeasurement(
-                    id=_uuid(), station_id=sid, measurement_time=dt,
+                    station_id=sid, measurement_time=dt,
                     dx=dx, dy=dy, dz=dz, hdop=hdop, vdop=vdop,
                 ))
             session.bulk_save_objects(objs)
@@ -278,7 +275,7 @@ def seed_monitoring_data(overwrite: bool = False) -> dict:
                 track = f"T{np.random.randint(120, 130)}"
 
                 objs.append(InSARMeasurement(
-                    id=_uuid(), station_id=sid, acquisition_time=dt,
+                    station_id=sid, acquisition_time=dt,
                     los_displacement=los, coherence=coherence,
                     incidence_angle=inc_angle, track_number=track,
                 ))

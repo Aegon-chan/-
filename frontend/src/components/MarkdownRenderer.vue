@@ -33,6 +33,9 @@ const rendered = computed(() => {
 
 <style>
 .markdown-body { line-height: 1.7; font-size: 14px; word-break: break-word; }
+.markdown-body img { max-width: 100%; height: auto; border-radius: 6px; display: block; margin: 8px 0; }
+.markdown-body canvas, .markdown-body svg { max-width: 100%; height: auto; }
+.markdown-body iframe { max-width: 100%; border: 0; border-radius: 6px; }
 .markdown-body p { margin: 0 0 8px; }
 .markdown-body p:last-child { margin-bottom: 0; }
 .markdown-body pre { background: #f6f8fa; border-radius: 8px; padding: 14px; overflow-x: auto; margin: 8px 0; font-size: 13px; }
@@ -45,13 +48,13 @@ const rendered = computed(() => {
 .markdown-body h2 { font-size: 16px; }
 .markdown-body h3 { font-size: 15px; }
 .markdown-body blockquote { border-left: 3px solid #d0d7de; padding-left: 12px; color: #57606a; margin: 8px 0; }
-.markdown-body table { border-collapse: collapse; margin: 8px 0; width: 100%; }
+.markdown-body table { display: block; overflow-x: auto; border-collapse: collapse; margin: 8px 0; max-width: 100%; }
 .markdown-body th, .markdown-body td { border: 1px solid #d0d7de; padding: 6px 10px; text-align: left; }
 .markdown-body th { background: #f6f8fa; font-weight: 600; }
 .markdown-body a { color: #0969da; text-decoration: none; }
 .markdown-body a:hover { text-decoration: underline; }
 .markdown-body hr { border: none; border-top: 1px solid #d0d7de; margin: 16px 0; }
-.markdown-body table { border-collapse: collapse; margin: 8px 0; width: 100%; }
+.markdown-body table { display: block; overflow-x: auto; border-collapse: collapse; margin: 8px 0; max-width: 100%; }
 .markdown-body th, .markdown-body td { border: 1px solid #d0d7de; padding: 6px 10px; text-align: left; }
 .markdown-body th { background: #f6f8fa; font-weight: 600; }
 </style>

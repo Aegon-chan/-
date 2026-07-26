@@ -14,6 +14,14 @@ from openai import AsyncOpenAI
 
 from backend.models.base import BaseLLM, Message, ModelResponse
 from backend.core.exceptions import ConfigError, ModelError
+from typing import Any as _Any
+
+_AZURE_ONLY_PARAMS: frozenset[str] = frozenset({"data_sources", "data_source"})
+
+def _strip_azure_params(kwargs: dict[str, _Any]) -> dict[str, _Any]:
+    """Remove Azure-specific parameters not recognized by standard OpenAI-compatible APIs."""
+    return {k: v for k, v in kwargs.items() if k not in _AZURE_ONLY_PARAMS}
+
 
 
 
@@ -45,6 +53,8 @@ class OpenAICompatibleLLM(BaseLLM):
         self._client = AsyncOpenAI(
             api_key=api_key,
             base_url=api_base,
+            max_retries=0,
+            timeout=30.0,
         )
 
     @staticmethod
@@ -91,11 +101,13 @@ class OpenAICompatibleLLM(BaseLLM):
     ) -> ModelResponse:
         try:
             response = await self._client.chat.completions.create(
-                model=self.model_name,
-                messages=self._convert_messages(messages, supports_vision=self.model_id in _VISION_MODELS),
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **kwargs,
+                **_strip_azure_params({
+                    "model": self.model_name,
+                    "messages": self._convert_messages(messages, supports_vision=self.model_id in _VISION_MODELS),
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    **kwargs,
+                })
             )
         except Exception as e:
             logger.error("模型 %s 调用失败: %s", self.model_id, e)
@@ -123,12 +135,14 @@ class OpenAICompatibleLLM(BaseLLM):
     ) -> AsyncGenerator[str, None]:
         try:
             stream = await self._client.chat.completions.create(
-                model=self.model_name,
-                messages=self._convert_messages(messages, supports_vision=self.model_id in _VISION_MODELS),
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=True,
-                **kwargs,
+                **_strip_azure_params({
+                    "model": self.model_name,
+                    "messages": self._convert_messages(messages, supports_vision=self.model_id in _VISION_MODELS),
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "stream": True,
+                    **kwargs,
+                })
             )
         except Exception as e:
             logger.error("模型 %s 流式调用失败: %s", self.model_id, e)

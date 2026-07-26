@@ -18,7 +18,7 @@ class FineTuner:
     """Model fine-tuning manager with LoRA support."""
 
     def __init__(self, base_model_path: str = "", checkpoint_dir: str = "./data/lora_checkpoints"):
-        self.base_model_path = base_model_path or "./model_cache/base_model"
+        self.base_model_path = str(Path(base_model_path or "./model_cache/base_model").resolve())
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = self.checkpoint_dir.parent / "finetune.db"
@@ -128,7 +128,7 @@ class FineTuner:
 
             return str(out_dir)
 
-        except ImportError as e:
+        except (ImportError, OSError) as e:
             logger.warning("LoRA training dependencies not available: %s", e)
 
             # Create placeholder adapter

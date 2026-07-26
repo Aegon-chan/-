@@ -11,6 +11,9 @@
 """
 from __future__ import annotations
 
+import uuid
+
+
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
@@ -80,6 +83,8 @@ class RainfallMeasurement(MonitoringBase):
                         nullable=False, index=True)
     measurement_time = Column(DateTime, nullable=False, index=True)
     rainfall_amount = Column(Float, nullable=False)    # 降雨量 (mm)
+    intensity = Column(Float, nullable=True)    # 降雨强度 (mm/h)
+    duration_min = Column(Integer, nullable=True)  # 持续时间 (分钟)
 
     station = relationship("MonitoringStation", back_populates="rainfall_measurements")
 
@@ -121,6 +126,8 @@ class GnssMeasurement(MonitoringBase):
     variation = Column(Float, nullable=True)               # 变化量 (mm)
     daily_planar_rate = Column(Float, nullable=True)       # 日平面位移速率 (mm/d)
     daily_variation_rate = Column(Float, nullable=True)    # 日变化量速率 (mm/d)
+    hdop = Column(Float, nullable=True)    # 水平精度因子
+    vdop = Column(Float, nullable=True)    # 垂直精度因子
 
     station = relationship("MonitoringStation", back_populates="gnss_measurements")
 
@@ -152,7 +159,7 @@ class ImportBatch(MonitoringBase):
     """Import batch record for tracking uploaded data."""
     __tablename__ = "import_batches"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     data_type = Column(String(32), nullable=False, index=True)
     file_name = Column(String(256), default="")
     batch_label = Column(String(128), default="")

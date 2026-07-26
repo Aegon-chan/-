@@ -1423,6 +1423,10 @@ class ResearchAgent:
                 yield "Action: generate report\n"
                 observation = await self._react_tool_generate_report(report_type=action_input.get("report_type", "daily"), data=action_input.get("data", {}))
                 yield "Observation: " + observation + "\n\n"
+            elif action == "query_database":
+                yield "Action: query database\n"
+                observation = await self._react_tool_query_database(sql=action_input.get("sql", ""), database=action_input.get("database", "monitoring"))
+                yield "Observation:\n" + observation[:500] + "\n\n"
             else:
                 yield "Unknown action: " + str(action) + "\n\n"
             import json  # noqa: E402
