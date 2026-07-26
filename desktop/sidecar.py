@@ -1,6 +1,6 @@
 \"\"\"Python sidecar launcher for Tauri desktop wrapper.
 
-Starts the backend (FastAPI) and frontend (NiceGUI) servers,
+Starts the backend (FastAPI) and frontend (Vue 3 + Vite) servers,
 shutting them down cleanly when the sidecar process is terminated.
 \"\"\"
 from __future__ import annotations
@@ -36,7 +36,7 @@ def main():
     os.chdir(BACKEND_DIR.parent)  # project root
 
     backend_port = _find_free_port(8010)
-    frontend_port = _find_free_port(8080)
+    frontend_port = _find_free_port(5173)
 
     processes: list[subprocess.Popen] = []
 
@@ -53,7 +53,7 @@ def main():
     )
     processes.append(backend)
 
-    # Start frontend (NiceGUI)
+    # Start frontend (Vue 3 + Vite)
     frontend = subprocess.Popen(
         [PYTHON, "-m", "frontend.app",
          "--host", "127.0.0.1", "--port", str(frontend_port),

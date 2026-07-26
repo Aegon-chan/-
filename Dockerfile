@@ -37,9 +37,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
+# Copy built frontend assets
+COPY --from=frontend-builder /frontend/dist/ frontend/dist/
+
 # Copy application code
 COPY backend/ backend/
-COPY frontend/ frontend/
+COPY frontend/dist/ frontend/dist/
 COPY sandbox/ sandbox/
 COPY docs/ docs/
 COPY .env.example .env.example
@@ -49,8 +52,8 @@ RUN mkdir -p /app/data/raw /app/data/processed /app/data/logs \
              /app/data/chroma_db /app/data/memories /app/data/lora_checkpoints \
              /app/reports/output /app/model_cache
 
-# Expose ports: 8000 = FastAPI backend, 8080 = NiceGUI frontend
-EXPOSE 8000 8080
+# Expose port: 8000 = FastAPI backend (frontend served via built dist)
+EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \

@@ -31,7 +31,7 @@ class StationUpdate(BaseModel):
 
 
 class StationResponse(BaseModel):
-    id: str
+    id: int
     station_code: str
     station_name: str
     station_type: str
@@ -49,7 +49,7 @@ class StationResponse(BaseModel):
 # ============================================================
 
 class DataQueryParams(BaseModel):
-    station_id: Optional[str] = Field(None, description="站点 ID")
+    station_id: Optional[int] = Field(None, description="站点 ID")
     start: Optional[str] = Field(None, description="起始时间 (ISO 格式)")
     end: Optional[str] = Field(None, description="结束时间 (ISO 格式)")
     limit: int = Field(100, description="返回条数上限", ge=1, le=10000)
@@ -57,8 +57,8 @@ class DataQueryParams(BaseModel):
 
 
 class DataPoint(BaseModel):
-    id: str
-    station_id: str
+    id: int
+    station_id: int
     measurement_time: str
     values: dict[str, Any] = Field(default_factory=dict, description="各字段的值")
 
@@ -91,7 +91,7 @@ class LatestResponse(BaseModel):
 class StatisticsResponse(BaseModel):
     success: bool = True
     data_type: str
-    station_id: Optional[str] = None
+    station_id: Optional[int] = None
     count: int = 0
     mean: Optional[float] = None
     min: Optional[float] = None
@@ -148,7 +148,7 @@ class TemplateResponse(BaseModel):
 # ============================================================
 
 class DeleteCondition(BaseModel):
-    station_id: Optional[str] = Field(None, description="站点 ID")
+    station_id: Optional[int] = Field(None, description="站点 ID")
     start: Optional[str] = Field(None, description="起始时间")
     end: Optional[str] = Field(None, description="结束时间")
     before: Optional[str] = Field(None, description="删除此时间之前的数据")

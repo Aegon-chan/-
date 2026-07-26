@@ -50,27 +50,18 @@ class TestMobileRouterMethods:
         assert "agent.execute_analysis" not in content, "agent.execute_analysis call should be removed"
 
 
+import pytest
+
+
+@pytest.mark.skip(reason="NiceGUI frontend removed, Vue 3 migration complete")
 class TestFrontendDedup:
-    """Bug 6: Verify message deduplication logic."""
+    """Bug 6: Verify message deduplication logic (NiceGUI legacy)."""
 
     def test_dedup_logic_avoids_duplicates(self):
-        """The new _save_messages_locally should use a seen set for dedup."""
-        import os
-        path = os.path.join(ROOT, "frontend", "app.py")
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read()
-        assert "seen" in content, "Missing dedup 'seen' set"
-        assert "fp not in seen" in content, "Missing dedup check"
+        pass
 
     def test_image_filter_in_add_downloads(self):
-        """Bug 13: _add_image_downloads should filter non-image URLs."""
-        import os
-        path = os.path.join(ROOT, "frontend", "app.py")
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read()
-        assert "_img_exts" in content, "Missing _img_exts filter"
-        assert "endswith(_img_exts)" in content, "Missing image extension filter"
-
+        pass
 
 class TestDatetimeUtcNowReplacement:
     """Bug 7: Verify datetime.utcnow() replaced with datetime.now(timezone.utc)."""

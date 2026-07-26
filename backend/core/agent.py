@@ -46,7 +46,13 @@ logger = logging.getLogger("research_agent.core")
 # ReAct 系统提示
 # ---------------------------------------------------------------------------
 
-REACT_SYSTEM_PROMPT = """你是 Research Agent，一个具备推理和行动能力的科研数据分析智能体。
+REACT_SYSTEM_PROMPT = """你是 Research Agent，一个本地科研数据分析系统。你连接了一个 SQLite 监测数据库 (monitoring)，里面包含 2020-2026 年的降雨量、地下水位、GNSS 位移等实测数据。
+
+当用户询问任何监测数据（降雨、地下水、GNSS、位移、水位等）时，你必须用 query_database 工具从 monitoring 数据库中查询，绝不能回答"无法访问实时数据"或建议用户去其他网站查询——数据库里就有数据。
+
+你可以用 SQL 做聚合统计、按时间筛选、跨站点对比等分析。
+
+
 
 请按照以下步骤思考并解决问题：
 
@@ -62,7 +68,22 @@ REACT_SYSTEM_PROMPT = """你是 Research Agent，一个具备推理和行动能�
 4. `generate_report(report_type: str, data: dict)` - 生成监测报告（html/docx/pdf）。
    report_type 可选: daily, weekly, monthly, special
 
-5. `final_answer(answer: str)` - 输出最终答案，结束推理。
+5. `query_database(sql: str, database: str)` - 查 monitoring 数据库（2020-2026 监测数据）。
+   表全名（必须用完整表名，不能简写）:
+   - `monitoring_stations`(站点): station_code, station_name, station_type(取值:groundwater/rainfall/gnss/insar/pore_pressure), longitude, latitude
+   - `rainfall_measurements`(降雨量 2201行): station_id(FK->id), measurement_time, rainfall_amount
+   - `groundwater_measurements`(地下水 2072行): station_id(FK), measurement_time, water_level, water_depth, temperature
+   - `gnss_measurements`(GNSS位移 7163行): station_id(FK), measurement_time, dx, dy, dz, planar_displacement, variation
+   JOIN: monitoring_stations.id = *.station_id
+   station_type='gnss'→GNSS-01/02/03/04, 'groundwater'→DXS-01/02/03, 'rainfall'→RF-01
+   正确SQL示例:
+   - 某类型所有站点数据: SELECT s.station_code,s.station_name,m.* FROM monitoring_stations s JOIN rainfall_measurements m ON s.id=m.station_id WHERE s.station_type='rainfall' LIMIT 10
+   - 按时间过滤: SELECT * FROM groundwater_measurements WHERE measurement_time BETWEEN '2024-01-01' AND '2024-12-31' LIMIT 20
+   - 聚合统计: SELECT s.station_code,AVG(m.water_level) as avg_level FROM monitoring_stations s JOIN groundwater_measurements m ON s.id=m.station_id WHERE s.station_type='groundwater' GROUP BY s.station_code
+   - 某站点极值: SELECT MAX(dx),MAX(dy),MIN(dz) FROM gnss_measurements WHERE station_id=(SELECT id FROM monitoring_stations WHERE station_code='GNSS-01')
+   database="main" 查主库: sessions, messages, users
+   database="monitoring" 查监测数据, database="main" 查会话/用户表: sessions, messages, users
+6. `final_answer(answer: str)` - 输出最终答案，结束推理。
 
 ## 推理格式
 
@@ -1290,6 +1311,33 @@ class ResearchAgent:
             return "\n".join(lines)
         except Exception as e:
             return "Memory search error: " + str(e)
+
+    async def _react_tool_query_database(self, sql: str, database: str = "monitoring") -> str:
+        """Execute SQL SELECT query on database."""
+        try:
+            from sqlalchemy import text as sa_text
+            if database == "monitoring":
+                from backend.db.monitoring_session import sync_engine as _eng
+            else:
+                from backend.db.session import sync_engine as _eng
+            sql_stripped = sql.strip().lower()
+            if not sql_stripped.startswith("select") and not sql_stripped.startswith("with"):
+                return "Error: Only SELECT queries are allowed"
+            with _eng.connect() as conn:
+                result = conn.execute(sa_text(sql))
+                cols = list(result.keys())
+                rows = result.fetchall()
+            if not rows:
+                return "(empty)"
+            lines = [" | ".join(str(c) for c in cols)]
+            lines.append("-" * len(lines[0]))
+            for row in rows[:25]:
+                lines.append(" | ".join(str(v)[:50] for v in row))
+            if len(rows) > 25:
+                lines.append(f"... ({len(rows)} total, showing 25)")
+            return "\n".join(lines)
+        except Exception as e:
+            return "Query error: " + str(e)
 
     async def _react_tool_generate_report(self, report_type: str, data: dict) -> str:
         """Generate monitoring report."""

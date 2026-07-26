@@ -1,6 +1,6 @@
-# Research Agent -- ×ÔÎÒ³É³¤ÐÍ¿ÆÑÐÊý¾Ý·ÖÎöÖúÊÖ
+# Research Agent -- Ò³É³Í¿Ý·
 
-A self-evolving AI data analysis assistant for geological deformation monitoring, hydrological monitoring, and general scientific research scenarios. Built with FastAPI + NiceGUI + LangChain.
+A self-evolving AI data analysis assistant for geological deformation monitoring, hydrological monitoring, and general scientific research scenarios. Built with FastAPI + Vue 3 + LangChain.
 
 The agent learns from user feedback, optimises its prompts, builds a long-term memory network, and can auto-trigger LoRA fine-tuning -- growing better with every interaction.
 
@@ -26,7 +26,7 @@ The agent learns from user feedback, optimises its prompts, builds a long-term m
 | Layer | Technology |
 |--------|-----------|
 | Backend | Python 3.12+, FastAPI, SQLAlchemy, Alembic |
-| Frontend | NiceGUI (desktop), API-driven (mobile) |
+| Frontend | Vue 3 + Vite (desktop), API-driven (mobile) |
 | AI | LangChain, multi-model Router, ReAct pattern |
 | Vector Store | ChromaDB + BAAI/bge-small-zh-v1.5 |
 | Self-Growth | SQLite memory network, APE, LoRA (PEFT) |
@@ -40,78 +40,78 @@ The agent learns from user feedback, optimises its prompts, builds a long-term m
 
 ```
 research-agent/
-©À©¤©¤ backend/                    # FastAPI ºó¶Ë·þÎñ
-©¦   ©À©¤©¤ main.py                 # Ó¦ÓÃÈë¿Ú£¬Â·ÓÉ×¢²á£¬ÖÐ¼ä¼þ
-©¦   ©À©¤©¤ config.py               # pydantic-settings ÅäÖÃ£¨.env£©
-©¦   ©À©¤©¤ uploads.py              # ÎÄ¼þÉÏ´«ÓëÎÄ±¾ÌáÈ¡
-©¦   ©À©¤©¤ api/                    # REST API Â·ÓÉ
-©¦   ©¦   ©À©¤©¤ chat.py             #   ¶Ô»°½Ó¿Ú
-©¦   ©¦   ©À©¤©¤ models.py           #   Ä£ÐÍ¹ÜÀíÓëÇÐ»»
-©¦   ©¦   ©À©¤©¤ sessions.py         #   »á»° CRUD
-©¦   ©¦   ©À©¤©¤ analysis.py         #   Êý¾Ý·ÖÎöÖ´ÐÐ
-©¦   ©¦   ©À©¤©¤ knowledge.py        #   ÖªÊ¶¿â¹ÜÀí
-©¦   ©¦   ©À©¤©¤ feedback.py         #   ·´À¡ÊÕ¼¯
-©¦   ©¦   ©¸©¤©¤ self_growth.py      #   ×Ô³É³¤×´Ì¬²éÑ¯
-©¦   ©À©¤©¤ core/                   # ÖÇÄÜÌåºËÐÄÒýÇæ
-©¦   ©¦   ©À©¤©¤ agent.py            #   ResearchAgent ºËÐÄÐ­µ÷Æ÷
-©¦   ©¦   ©À©¤©¤ memory.py           #   ³¤ÆÚ¼ÇÒä´æ´¢
-©¦   ©¦   ©À©¤©¤ strategy.py         #   ²ßÂÔ¿â
-©¦   ©¦   ©À©¤©¤ sandbox.py          #   ´úÂëÖ´ÐÐÉ³Ïä
-©¦   ©¦   ©¸©¤©¤ exceptions.py       #   Í³Ò»Òì³£´¦Àí
-©¦   ©À©¤©¤ models/                 # AI Ä£ÐÍÊÊÅä²ã
-©¦   ©¦   ©À©¤©¤ base.py             #   BaseLLM / BaseEmbedding ³éÏó½Ó¿Ú
-©¦   ©¦   ©À©¤©¤ registry.py         #   Ä£ÐÍ×¢²á±íÓë fallback
-©¦   ©¦   ©À©¤©¤ lora_adapter.py     #   LoRA Î¢µ÷Ä£ÐÍ¼ÓÔØ
-©¦   ©¦   ©¸©¤©¤ adapters/           #   ¾ßÌåÊÊÅäÆ÷
-©¦   ©¦       ©À©¤©¤ deepseek.py     #   DeepSeek API ÊÊÅä
-©¦   ©¦       ©À©¤©¤ kimi.py         #   Kimi API ÊÊÅä
-©¦   ©¦       ©¸©¤©¤ openai_compat.py#   OpenAI ¼æÈÝ API ÊÊÅä
-©¦   ©À©¤©¤ analysis/               # ×¨ÒµÊý¾Ý·ÖÎöÄ£¿é
-©¦   ©¦   ©À©¤©¤ gnss.py             #   GNSS Î»ÒÆ·ÖÎö
-©¦   ©¦   ©À©¤©¤ insar.py            #   InSAR ÐÎ±ä·ÖÎö
-©¦   ©¦   ©À©¤©¤ rainfall.py         #   ½µÓêÊý¾Ý·ÖÎö
-©¦   ©¦   ©À©¤©¤ groundwater.py      #   µØÏÂË®Î»·ÖÎö
-©¦   ©¦   ©À©¤©¤ pore_pressure.py    #   ¿×Ï¶Ë®Ñ¹Á¦·ÖÎö
-©¦   ©¦   ©À©¤©¤ cross_correlation.py#   ¶àÔ´Êý¾Ý»¥Ïà¹Ø·ÖÎö
-©¦   ©¦   ©À©¤©¤ parser.py           #   ¶à¸ñÊ½Êý¾Ý½âÎö
-©¦   ©¦   ©À©¤©¤ codegen.py          #   NL-to-Python ´úÂëÉú³É
-©¦   ©¦   ©¸©¤©¤ cache.py            #   ²éÑ¯½á¹û»º´æ
-©¦   ©À©¤©¤ retrieval/              # ÖªÊ¶¼ìË÷ÏµÍ³
-©¦   ©¦   ©À©¤©¤ vector_store.py     #   ChromaDB ÏòÁ¿´æ´¢
-©¦   ©¦   ©À©¤©¤ literature.py       #   ÎÄÏ×¼ìË÷
-©¦   ©¦   ©À©¤©¤ standards.py        #   ¹æ·¶ÌõÎÄ¼ìË÷
-©¦   ©¦   ©¸©¤©¤ cases.py            #   °¸Àý¼ìË÷
-©¦   ©À©¤©¤ reporting/              # ±¨¸æÉú³É
-©¦   ©¦   ©À©¤©¤ report_generator.py #   ±¨¸æÉú³ÉÒýÇæ£¨HTML/DOCX/PDF£©
-©¦   ©¦   ©À©¤©¤ charts.py           #   Plotly ½»»¥Ê½Í¼±í
-©¦   ©¦   ©À©¤©¤ charts_matplotlib.py#   Matplotlib ³ö°æ¼¶¾²Ì¬Í¼±í
-©¦   ©¦   ©¸©¤©¤ templates/          #   Jinja2 ±¨¸æÄ£°å
-©¦   ©À©¤©¤ self_growth/            # ×ÔÎÒ³É³¤Ä£¿é
-©¦   ©¦   ©À©¤©¤ feedback.py         #   ÏÔÊ½/ÒþÊ½·´À¡ÊÕ¼¯
-©¦   ©¦   ©À©¤©¤ prompt_optimizer.py #   APE Prompt ×Ô¶¯ÓÅ»¯
-©¦   ©¦   ©À©¤©¤ memory_optimizer.py #   ¼ÇÒäÈ¨ÖØÓÅ»¯
-©¦   ©¦   ©À©¤©¤ finetune.py         #   LoRA Î¢µ÷¹ÜÏß
-©¦   ©¦   ©À©¤©¤ implicit_feedback.py#   ÒþÊ½·´À¡ÊÕ¼¯
-©¦   ©¦   ©À©¤©¤ benchmark.py        #   Î¢µ÷»ù×¼ÆÀ¹À
-©¦   ©¦   ©¸©¤©¤ progressive.py      #   ½¥½øÊ½Ñ§Ï°
-©¦   ©À©¤©¤ schemas/                # Pydantic Êý¾ÝÄ£ÐÍ
-©¦   ©¸©¤©¤ db/                     # Êý¾Ý¿â
-©¦       ©À©¤©¤ models.py           #   SQLAlchemy Êý¾ÝÄ£ÐÍ
-©¦       ©À©¤©¤ session.py          #   Êý¾Ý¿â»á»°¹ÜÀí
-©¦       ©¸©¤©¤ migrations/         #   Alembic Ç¨ÒÆ½Å±¾
-©À©¤©¤ frontend/                   # NiceGUI Ç°¶Ë
-©¦   ©À©¤©¤ app.py                  #   Ó¦ÓÃÈë¿Ú
-©¦   ©¸©¤©¤ runtime_hook.py         #   ÔËÐÐ»·¾³³õÊ¼»¯
-©À©¤©¤ tests/                      # ²âÊÔ
-©¦   ©À©¤©¤ conftest.py             #   ¹²Ïí Fixtures
-©¦   ©À©¤©¤ unit/                   #   µ¥Ôª²âÊÔ£¨¸²¸ÇËùÓÐÄ£¿é£©
-©¦   ©¸©¤©¤ integration/            #   ¼¯³É²âÊÔ
-©À©¤©¤ scripts/                    # ¿ª·¢Óë²¿Êð½Å±¾
-©À©¤©¤ mobile/                     # ÒÆ¶¯¶Ë£¨¿Õ¿Ç£©
-©À©¤©¤ docs/                       # ÎÄµµ
-©À©¤©¤ reports/output/             # Éú³ÉµÄ±¨¸æ
-©À©¤©¤ data/                       # ÔËÐÐÊ±Êý¾Ý
-©¸©¤©¤ sandbox/                    # É³Ïä²ßÂÔÅäÖÃ
+ backend/                    # FastAPI Ë·
+    main.py                 # Ó¦Ú£Â·×¢á£¬Ð¼
+    config.py               # pydantic-settings Ã£.env
+    uploads.py              # Ä¼Ï´Ä±È¡
+    api/                    # REST API Â·
+       chat.py             #   Ô»Ó¿
+       models.py           #   Ä£Í¹Ð»
+       sessions.py         #   á»° CRUD
+       analysis.py         #   Ý·Ö´
+       knowledge.py        #   ÖªÊ¶
+       feedback.py         #   Õ¼
+       self_growth.py      #   Ô³É³×´Ì¬Ñ¯
+    core/                   # 
+       agent.py            #   ResearchAgent Ð­
+       memory.py           #   Ú¼æ´¢
+       strategy.py         #   Ô¿
+       sandbox.py          #   Ö´É³
+       exceptions.py       #   Í³Ò»ì³£
+    models/                 # AI Ä£
+       base.py             #   BaseLLM / BaseEmbedding Ó¿
+       registry.py         #   Ä£×¢ fallback
+       lora_adapter.py     #   LoRA Î¢Ä£Í¼
+       adapters/           #   
+           deepseek.py     #   DeepSeek API 
+           kimi.py         #   Kimi API 
+           openai_compat.py#   OpenAI  API 
+    analysis/               # ×¨ÒµÝ·Ä£
+       gnss.py             #   GNSS Î»Æ·
+       insar.py            #   InSAR Î±
+       rainfall.py         #   Ý·
+       groundwater.py      #   Ë®Î»
+       pore_pressure.py    #   Ï¶Ë®Ñ¹
+       cross_correlation.py#   Ô´Ý»Ø·
+       parser.py           #   Ê½Ý½
+       codegen.py          #   NL-to-Python 
+       cache.py            #   Ñ¯
+    retrieval/              # ÖªÊ¶ÏµÍ³
+       vector_store.py     #   ChromaDB æ´¢
+       literature.py       #   ×¼
+       standards.py        #   æ·¶Ä¼
+       cases.py            #   
+    reporting/              # 
+       report_generator.py #   æ£¨HTML/DOCX/PDF
+       charts.py           #   Plotly Ê½Í¼
+       charts_matplotlib.py#   Matplotlib æ¼¶Ì¬Í¼
+       templates/          #   Jinja2 Ä£
+    self_growth/            # Ò³É³Ä£
+       feedback.py         #   Ê½/Ê½Õ¼
+       prompt_optimizer.py #   APE Prompt Ô¶Å»
+       memory_optimizer.py #   È¨Å»
+       finetune.py         #   LoRA Î¢
+       implicit_feedback.py#   Ê½Õ¼
+       benchmark.py        #   Î¢×¼
+       progressive.py      #   Ê½Ñ§Ï°
+    schemas/                # Pydantic Ä£
+    db/                     # Ý¿
+        models.py           #   SQLAlchemy Ä£
+        session.py          #   Ý¿á»°
+        migrations/         #   Alembic Ç¨Æ½Å±
+ frontend/                   # NiceGUI Ç°
+    app.py                  #   Ó¦
+    runtime_hook.py         #   Ð»Ê¼
+ tests/                      # 
+    conftest.py             #    Fixtures
+    unit/                   #   ÔªÔ£Ä£é£©
+    integration/            #   É²
+ scripts/                    # ë²¿Å±
+ mobile/                     # Æ¶Ë£Õ¿Ç£
+ docs/                       # Äµ
+ reports/output/             # ÉµÄ±
+ data/                       # Ê±
+ sandbox/                    # É³
 ```
 
 ---
@@ -143,7 +143,7 @@ alembic upgrade head
 powershell -File scripts/dev.ps1
 ```
 
-Then open http://localhost:8080 for the NiceGUI frontend, or http://localhost:8010/docs for API docs.
+Then open http://localhost:5173 for the Vue 3 frontend, or http://localhost:8010/docs for API docs.
 
 ### Desktop exe (no Python required)
 
@@ -191,7 +191,7 @@ pytest tests/unit/ --cov=backend -v
 | Database | SQLite -> PostgreSQL | Zero-config dev, scalable prod |
 | Vector store | ChromaDB | Local, lightweight, no separate service |
 | Embedding model | BAAI/bge-small-zh-v1.5 | Top Chinese semantic search |
-| Frontend (desktop) | NiceGUI | Python-native, no Node.js |
+| Frontend (desktop) | Vue 3 + Vite | Node.js required for dev, static build for prod |
 | Fine-tuning | LoRA (PEFT) | Memory-efficient, hot-swappable |
 | Code sandbox | Subprocess + Docker | Dev zero-deps, prod full isolation |
 
