@@ -49,6 +49,13 @@ CODEGEN_SYSTEM_PROMPT = """你是一位专业的地质灾害监测数据分析�
    - 禁止使用 df.tail(365) 等方式
    数据可能跨越多个年份，具体时间范围会在 [Available Data Schema] 中给出。必须根据 measurement_time 列的内容来筛选，而不是通过行号截取。
 16. **始终假设数据包含 measurement_time 列**（监测数据标准列名），类型为 datetime。如果需要按时间分析，先确保转换：df["measurement_time"] = pd.to_datetime(df["measurement_time"])。
+
+17. **pandas 3.0 频率别名注意**：本环境中的 pandas 为 3.x 版本，`.resample()`, `pd.Grouper(freq=...)`, `pd.date_range(freq=...)` 等方法必须使用新版频率别名：
+   - 使用 `'YE'`（替代已移除的 `'Y'`/`'A'`）— 年末
+   - 使用 `'YS'`（替代已移除的 `'AS'`）— 年初
+   - 使用 `'ME'`（替代已移除的 `'M'`/`'MS'`）— 月末
+   - 使用 `'QE'`（替代已移除的 `'Q'`/`'QS'`）— 季度末
+   - `'W'`, `'D'`, `'h'` 不变，可继续使用
 """
 
 def build_generation_prompt(
