@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { dbApi } from '@/api/database'
-import { Database, Table2, Search, Play, Delete, Trash2, Loader2, RefreshCw, ChevronLeft, ChevronRight, Terminal, Upload } from 'lucide-vue-next'
+import { Database, Table2, Search, Play, Delete, Trash2, Loader2, RefreshCw, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Terminal, Upload } from 'lucide-vue-next'
 
 const tables = ref([])
 const dbStats = ref([])
@@ -14,10 +14,11 @@ const tableColumns = ref([])
 const tableRows = ref([])
 const totalRows = ref(0)
 const currentPage = ref(1)
-const pageSize = 50
+const pageSize = ref(50)
 const searchText = ref('')
 const browseLoading = ref(false)
 const dbFilter = ref('all')
+const gotoPageInput = ref('')
 
 // SQL query
 const querySql = ref('SELECT * FROM sessions LIMIT 10')
@@ -34,6 +35,26 @@ const dateCol = ref('')
 const condAfter = ref('')
 const condBefore = ref('')
 const condLoading = ref(false)
+
+const totalPages = computed(() => Math.max(1, Math.ceil(totalRows.value / pageSize.value)))
+
+const visiblePages = computed(() => {
+  const pages = []
+  const tp = totalPages.value
+  const cp = currentPage.value
+  let start = Math.max(1, cp - 2)
+  let end = Math.min(tp, cp + 2)
+  if (end - start < 4) {
+    if (start === 1) end = Math.min(tp, start + 4)
+    else start = Math.max(1, end - 4)
+  }
+  if (start > 1) pages.push(1)
+  if (start > 2) pages.push('...')
+  for (let i = start; i <= end; i++) pages.push(i)
+  if (end < tp - 1) pages.push('...')
+  if (end < tp) pages.push(tp)
+  return pages
+})
 
 onMounted(() => { loadTables() })
 
@@ -61,7 +82,7 @@ async function browseTable() {
   browseLoading.value = true
   try {
     const res = await dbApi.browse(browserDb.value, browserTable.value, {
-      page: currentPage.value, pageSize, search: searchText.value,
+      page: currentPage.value, pageSize: pageSize.value, search: searchText.value,
     })
     tableColumns.value = res.columns || []
     tableRows.value = res.rows || []
@@ -76,10 +97,26 @@ function selectTable(t) {
   searchText.value = ''
   tableColumns.value = t.columns || []
   browseTable()
+  gotoPageInput.value = ""
 }
 
-function changePage(delta) {
-  currentPage.value = Math.max(1, currentPage.value + delta)
+function goToPage(page) {
+  if (typeof page !== "number" || page < 1 || page > totalPages.value) return
+  currentPage.value = page
+  gotoPageInput.value = ""
+  browseTable()
+}
+
+function jumpToPage() {
+  const p = parseInt(gotoPageInput.value, 10)
+  if (!isNaN(p) && p >= 1 && p <= totalPages.value) {
+    goToPage(p)
+  }
+}
+
+function onPageSizeChange() {
+  currentPage.value = 1
+  gotoPageInput.value = ""
   browseTable()
 }
 
@@ -198,9 +235,27 @@ function formatCell(v) {
             </div>
             <!-- Pagination -->
             <div v-if="totalRows > pageSize" class="pagination">
-              <button :disabled="currentPage===1" @click="changePage(-1)"><ChevronLeft :size="14" /></button>
-              <span>{{ currentPage }} / {{ Math.ceil(totalRows/pageSize) }}</span>
-              <button :disabled="currentPage*pageSize>=totalRows" @click="changePage(1)"><ChevronRight :size="14" /></button>
+              <button :disabled="currentPage===1" @click="goToPage(1)" title="First page"><ChevronsLeft :size="14" /></button>
+              <button :disabled="currentPage===1" @click="goToPage(currentPage-1)"><ChevronLeft :size="14" /></button>
+              <template v-for="p in visiblePages" :key="p">
+                <span v-if="p === '...'" class="page-ellipsis">&hellip;</span>
+                <button v-else class="page-num" :class="{active: p === currentPage}" @click="goToPage(p)">{{ p }}</button>
+              </template>
+              <button :disabled="currentPage>=totalPages" @click="goToPage(currentPage+1)"><ChevronRight :size="14" /></button>
+              <button :disabled="currentPage>=totalPages" @click="goToPage(totalPages)" title="Last page"><ChevronsRight :size="14" /></button>
+              <span class="page-info">{{ currentPage }} / {{ totalPages }}</span>
+              <div class="goto-page">
+                <input v-model="gotoPageInput" @keydown.enter="jumpToPage" placeholder="Page #" class="goto-input" type="number" min="1" :max="totalPages" />
+                <button class="btn btn-xs" :disabled="!gotoPageInput" @click="jumpToPage">Go</button>
+              </div>
+              <span class="page-size-wrap">
+                <select v-model="pageSize" class="page-size-select" @change="onPageSizeChange">
+                  <option :value="25">25 / page</option>
+                  <option :value="50">50 / page</option>
+                  <option :value="100">100 / page</option>
+                  <option :value="200">200 / page</option>
+                </select>
+              </span>
             </div>
           </div>
           <!-- Batch Delete -->
@@ -303,8 +358,19 @@ function formatCell(v) {
 .row-action:hover { color:#ef4444; }
 
 .pagination { display:flex; align-items:center; justify-content:center; gap:10px; padding:8px; font-size:12px; color:#666; }
-.pagination button { background:none; border:1px solid #e5e7eb; border-radius:5px; padding:4px; cursor:pointer; display:flex; }
+.pagination button { background:none; border:1px solid #e5e7eb; border-radius:5px; padding:4px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:28px; }
 .pagination button:disabled { opacity:0.3; cursor:default; }
+.pagination .page-num { font-size:11px; font-weight:500; }
+.pagination .page-num.active { background:#6366f1; color:#fff; border-color:#6366f1; }
+.pagination .page-ellipsis { color:#999; font-size:12px; letter-spacing:1px; }
+.pagination .page-info { font-size:11px; color:#999; }
+.page-size-wrap { margin-left:4px; }
+.page-size-select { padding:3px 4px; border:1px solid #e5e7eb; border-radius:5px; font-size:11px; outline:none; background:#fff; cursor:pointer; }
+.page-size-wrap { margin-left:4px; }
+.goto-page { display:inline-flex; align-items:center; gap:4px; }
+.goto-input { width:50px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px; font-size:11px; outline:none; text-align:center; }
+.goto-input:focus { border-color:#6366f1; }
+.btn-xs { padding:2px 6px; font-size:10px; line-height:1.4; }
 .del-section { display:flex; gap:6px; }
 .input-sm { flex:1; padding:5px 8px; border:1px solid #d1d5db; border-radius:5px; font-size:12px; outline:none; }
 
