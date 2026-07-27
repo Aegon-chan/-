@@ -81,6 +81,10 @@ def extract_data_schema(df: pd.DataFrame) -> dict:
     Returns a dict with keys:
         column_names, column_info, row_count, sample_rows, data_description_text
     """
+    # Include named index (e.g. DatetimeIndex from monitoring data) as a regular column
+    if df.index.name is not None and df.index.name not in df.columns:
+        df = df.reset_index()
+
     if df is None or df.empty:
         return {
             "column_names": [],
@@ -146,6 +150,7 @@ def extract_data_schema(df: pd.DataFrame) -> dict:
         except Exception:
             continue
     if time_range is None and isinstance(df.index, pd.DatetimeIndex):
+        # Rarely reaches here — reset_index above should have moved it to a column
         time_range = {"column": str(df.index.name or "index"), "start": df.index.min().strftime("%Y-%m-%d"), "end": df.index.max().strftime("%Y-%m-%d")}
         lines.append("Time range of index: " + time_range["start"] + " ~ " + time_range["end"])
     return {

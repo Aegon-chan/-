@@ -499,7 +499,6 @@ async def get_all_data_for_analysis(
     df = pd.DataFrame(records)
     if time_col_name in df.columns:
         df[time_col_name] = pd.to_datetime(df[time_col_name])
-        df.set_index(time_col_name, inplace=True)
     return df
 
 
